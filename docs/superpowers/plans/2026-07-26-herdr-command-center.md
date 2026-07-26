@@ -132,10 +132,15 @@ Copyright (c) 2026 speardragon
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test \"test/**/*.test.mjs\""
   }
 }
 ```
+
+The test glob is explicit rather than bare `node --test`: Node's default
+discovery treats **every** `.mjs` file under `test/` as a test file, so
+`test/helpers/fake-tty.mjs` (added in Task 10) would be executed and counted as
+a phantom passing test. Naming `*.test.mjs` keeps the counts in this plan true.
 
 - [ ] **Step 5: Write `src/plugin.mjs`**
 
