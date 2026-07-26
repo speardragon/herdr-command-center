@@ -27,7 +27,7 @@ retries a `ui_busy` refusal, as a second line of defence.
 
 ## Installation
 
-Requires Node.js 22+ and herdr 0.7.5+.
+Requires Node.js 22+ and herdr 0.7.5+. `herdr plugin install` runs `npm ci` for you.
 
 ```bash
 herdr plugin install speardragon/herdr-command-center --yes
@@ -71,7 +71,7 @@ herdr server reload-config
 | `d` then `y` | delete the selected command | — |
 | `←` `→` / `Space` | — | change `Type` or `Cwd` |
 | `Backspace` | — | delete the last character |
-| `o` | open `commands.json` in your editor | — |
+| `o` | open `commands.toml` in your editor | — |
 | `Esc` | close the popup | discard and go back |
 | `Ctrl-C` | close the popup | close the popup |
 
@@ -81,7 +81,11 @@ badge and are reached with the arrow keys.
 
 ## The config file
 
-Everything the popup edits lives in one JSON file you are meant to edit by hand
+> Upgrading from a version that used commands.json. The first time you open the
+> popup it converts your file to `commands.toml` and renames the original to
+> `commands.json.bak`. Nothing is deleted.
+
+Everything the popup edits lives in one TOML file you are meant to edit by hand
 too. Press `o` in the popup, or run the action directly:
 
 ```bash
@@ -92,36 +96,36 @@ Its path:
 
 ```bash
 herdr plugin config-dir cdragon.command-center
-# → <that directory>/commands.json
+# → <that directory>/commands.toml
 ```
 
-```json
-{
-  "schema_version": 1,
-  "editor": ["code"],
-  "commands": [
-    {
-      "id": "open-in-vs-code",
-      "label": "Open in VS Code",
-      "type": "shell",
-      "command": "code .",
-      "cwd": "focused",
-      "description": "Open the focused pane's directory in VS Code"
-    },
-    {
-      "id": "file-explorer",
-      "label": "File explorer",
-      "type": "plugin_action",
-      "command": "ray.file-explorer.open",
-      "cwd": "focused",
-      "description": "Open Yazi in a split"
-    }
-  ]
-}
+```toml
+schema_version = 1
+editor = ["code"]
+
+# the ones I actually use
+[[commands]]
+id = "open-in-vs-code"
+label = "Open in VS Code"
+type = "shell"
+command = "code ."
+cwd = "focused"
+description = "Open the focused pane's directory in VS Code"
+
+[[commands]]
+label = "File explorer"
+type = "plugin_action"
+command = "ray.file-explorer.open"
+
+# [[commands]]                 <- commented out for now
+# label = "Lazygit"
+# type = "shell"
+# command = "lazygit"
 ```
 
 | Field | Meaning |
 | --- | --- |
+| `schema_version` | Always `1`. |
 | `editor` | argv used for the `o` key and the `edit-config` action. Defaults to `["code"]`. |
 | `id` | stable identifier. Omit it and one is derived from the label (Korean labels keep readable ids). |
 | `label` | what the popup shows. Up to 80 characters. |
@@ -130,19 +134,30 @@ herdr plugin config-dir cdragon.command-center
 | `cwd` | `focused` (default), `workspace`, or an absolute path. Ignored for `plugin_action`. |
 | `description` | optional one-line note shown under the list. |
 
-The file is only ever written atomically, and the popup refuses to save if the
-file changed on disk since it was opened — so editing it in VS Code while the
-popup is open cannot lose your edits. A malformed file opens the popup in an
-error mode that names the problem and still lets you press `o` to go fix it; it
-is never overwritten.
+> The file is only ever written atomically, and the popup refuses to save if the
+> file changed on disk since it was opened — so editing it in VS Code while the
+> popup is open cannot lose your edits.
+>
+> **Your comments survive.** The popup does not re-render the file; it replaces,
+> removes, or appends individual `[[commands]]` blocks. Your header, blank lines,
+> comments between blocks, and commented-out blocks are left byte-for-byte alone,
+> and a command you did not touch keeps its original formatting. The one
+> exception: comments *inside* a block you edit through the popup are lost,
+> because that block is rewritten.
+>
+> A malformed file opens the popup in an error mode that names the problem and
+> still lets you press `o` to go fix it; it is never overwritten.
 
 ### Anything herdr can do
 
 `type` is deliberately just `shell` and `plugin_action`, because a `shell`
 command can call the `herdr` CLI and therefore do anything herdr does:
 
-```json
-{ "label": "Lazygit in a split", "type": "shell", "command": "herdr plugin pane open --plugin ray.file-explorer --entrypoint explorer --placement split" }
+```toml
+[[commands]]
+label = "Lazygit in a split"
+type = "shell"
+command = "herdr plugin pane open --plugin ray.file-explorer --entrypoint explorer --placement split"
 ```
 
 ## Actions
@@ -150,7 +165,7 @@ command can call the `herdr` CLI and therefore do anything herdr does:
 | Action | What it does |
 | --- | --- |
 | `herdr plugin action invoke open --plugin cdragon.command-center` | open the popup |
-| `herdr plugin action invoke edit-config --plugin cdragon.command-center` | open `commands.json` in your editor |
+| `herdr plugin action invoke edit-config --plugin cdragon.command-center` | open `commands.toml` in your editor |
 
 ## Troubleshooting
 

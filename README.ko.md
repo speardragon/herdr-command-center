@@ -24,7 +24,7 @@
 
 ## 설치
 
-Node.js 22+ 와 herdr 0.7.5+ 가 필요합니다.
+Node.js 22+ 와 herdr 0.7.5+ 가 필요합니다. `herdr plugin install` 이 `npm ci` 를 대신 실행합니다.
 
 ```bash
 herdr plugin install speardragon/herdr-command-center --yes
@@ -68,7 +68,7 @@ herdr server reload-config
 | `d` 다음 `y` | 선택한 커맨드 삭제 | — |
 | `←` `→` / `Space` | — | `Type`·`Cwd` 값 변경 |
 | `Backspace` | — | 마지막 글자 삭제 |
-| `o` | `commands.json`을 에디터로 열기 | — |
+| `o` | `commands.toml`을 에디터로 열기 | — |
 | `Esc` | 팝업 닫기 | 취소하고 목록으로 |
 | `Ctrl-C` | 팝업 닫기 | 팝업 닫기 |
 
@@ -78,7 +78,10 @@ herdr server reload-config
 
 ## 설정 파일
 
-팝업이 편집하는 내용은 전부 JSON 파일 하나에 들어 있고, 이 파일은 직접 손으로
+> 예전에 쓰던 설정 파일: commands.json. 팝업을 처음 열 때 `commands.toml`로
+> 변환하고 원본은 `commands.json.bak`으로 이름만 바꿔 둡니다. 삭제하지 않습니다.
+
+팝업이 편집하는 내용은 전부 TOML 파일 하나에 들어 있고, 이 파일은 직접 손으로
 고치는 것도 전제로 하고 있습니다. 팝업에서 `o`를 누르거나, 액션을 직접 실행하세요:
 
 ```bash
@@ -89,36 +92,36 @@ herdr plugin action invoke edit-config --plugin cdragon.command-center
 
 ```bash
 herdr plugin config-dir cdragon.command-center
-# → <그 디렉터리>/commands.json
+# → <그 디렉터리>/commands.toml
 ```
 
-```json
-{
-  "schema_version": 1,
-  "editor": ["code"],
-  "commands": [
-    {
-      "id": "open-in-vs-code",
-      "label": "Open in VS Code",
-      "type": "shell",
-      "command": "code .",
-      "cwd": "focused",
-      "description": "포커스된 페인의 디렉터리를 VS Code로 열기"
-    },
-    {
-      "id": "file-explorer",
-      "label": "File explorer",
-      "type": "plugin_action",
-      "command": "ray.file-explorer.open",
-      "cwd": "focused",
-      "description": "Yazi를 split으로 열기"
-    }
-  ]
-}
+```toml
+schema_version = 1
+editor = ["code"]
+
+# the ones I actually use
+[[commands]]
+id = "open-in-vs-code"
+label = "Open in VS Code"
+type = "shell"
+command = "code ."
+cwd = "focused"
+description = "포커스된 페인의 디렉터리를 VS Code로 열기"
+
+[[commands]]
+label = "File explorer"
+type = "plugin_action"
+command = "ray.file-explorer.open"
+
+# [[commands]]                 <- commented out for now
+# label = "Lazygit"
+# type = "shell"
+# command = "lazygit"
 ```
 
 | 필드 | 의미 |
 | --- | --- |
+| `schema_version` | 항상 `1`. |
 | `editor` | `o` 키와 `edit-config` 액션이 사용할 argv. 기본값 `["code"]`. |
 | `id` | 고정 식별자. 생략하면 label에서 만들어집니다(한글 label도 읽을 수 있는 id가 됩니다). |
 | `label` | 팝업에 보이는 이름. 최대 80자. |
@@ -127,18 +130,27 @@ herdr plugin config-dir cdragon.command-center
 | `cwd` | `focused`(기본), `workspace`, 또는 절대 경로. `plugin_action`에서는 무시됩니다. |
 | `description` | 목록 아래에 보여줄 한 줄 설명(선택). |
 
-파일은 항상 원자적으로 기록되고, 팝업을 연 뒤 파일이 디스크에서 바뀌었다면 저장을
-거부합니다. 팝업을 열어둔 채 VS Code에서 편집해도 그 편집이 사라지지 않습니다.
-형식이 깨진 파일은 무엇이 문제인지 알려주는 에러 화면으로 열리고, 그 화면에서도
-`o`로 고치러 갈 수 있습니다. 깨진 파일을 덮어쓰지는 않습니다.
+> 파일은 항상 원자적으로 기록되고, 팝업을 연 뒤 파일이 디스크에서 바뀌었다면 저장을
+> 거부합니다. 팝업을 열어둔 채 VS Code에서 편집해도 그 편집이 사라지지 않습니다.
+>
+> **주석은 유지됩니다.** 팝업은 파일을 다시 렌더링하지 않고 `[[commands]]` 블록만
+> 교체·삭제·추가합니다. 헤더, 빈 줄, 블록 사이 주석, 주석 처리해 둔 블록은 바이트
+> 단위로 그대로 남고, 건드리지 않은 커맨드는 원래 서식을 유지합니다. 예외는 하나:
+> 팝업에서 수정한 블록 *안쪽*의 주석은 그 블록이 다시 쓰이므로 사라집니다.
+>
+> 형식이 깨진 파일은 무엇이 문제인지 알려주는 에러 화면으로 열리고, 그 화면에서도
+> `o`로 고치러 갈 수 있습니다. 깨진 파일을 덮어쓰지는 않습니다.
 
 ### herdr가 할 수 있는 건 다 됩니다
 
 `type`을 `shell`과 `plugin_action` 둘로만 둔 이유는, `shell` 커맨드가 `herdr` CLI를
 호출할 수 있어서 herdr가 하는 일은 전부 가능하기 때문입니다:
 
-```json
-{ "label": "Lazygit in a split", "type": "shell", "command": "herdr plugin pane open --plugin ray.file-explorer --entrypoint explorer --placement split" }
+```toml
+[[commands]]
+label = "Lazygit in a split"
+type = "shell"
+command = "herdr plugin pane open --plugin ray.file-explorer --entrypoint explorer --placement split"
 ```
 
 ## 액션
@@ -146,7 +158,7 @@ herdr plugin config-dir cdragon.command-center
 | 액션 | 설명 |
 | --- | --- |
 | `herdr plugin action invoke open --plugin cdragon.command-center` | 팝업 열기 |
-| `herdr plugin action invoke edit-config --plugin cdragon.command-center` | `commands.json`을 에디터로 열기 |
+| `herdr plugin action invoke edit-config --plugin cdragon.command-center` | `commands.toml`을 에디터로 열기 |
 
 ## 문제 해결
 
