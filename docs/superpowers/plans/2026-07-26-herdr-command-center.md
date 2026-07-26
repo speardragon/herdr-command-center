@@ -5003,7 +5003,9 @@ herdr server reload-config
 
 | Key | In the list | In the add/edit form |
 | --- | --- | --- |
-| `↑` `↓` / `k` `j` | move the selection | previous / next field |
+| `↑` `↓` | move the selection | previous / next field |
+| `Tab` / `Shift-Tab` | — | next / previous field |
+| `k` `j` | move the selection | typed into the focused text field |
 | `Enter` | run the selected command | save |
 | `1`–`9` | run the command with that badge | type the digit |
 | `a` | add a command | — |
@@ -5181,7 +5183,9 @@ herdr server reload-config
 
 | 키 | 목록에서 | 추가/수정 폼에서 |
 | --- | --- | --- |
-| `↑` `↓` / `k` `j` | 선택 이동 | 이전 / 다음 필드 |
+| `↑` `↓` | 선택 이동 | 이전 / 다음 필드 |
+| `Tab` / `Shift-Tab` | — | 다음 / 이전 필드 |
+| `k` `j` | 선택 이동 | 포커스된 텍스트 필드에 입력됨 |
 | `Enter` | 선택한 커맨드 실행 | 저장 |
 | `1`–`9` | 그 번호의 커맨드 실행 | 숫자 입력 |
 | `a` | 커맨드 추가 | — |

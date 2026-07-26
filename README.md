@@ -61,7 +61,9 @@ herdr server reload-config
 
 | Key | In the list | In the add/edit form |
 | --- | --- | --- |
-| `↑` `↓` / `k` `j` | move the selection | previous / next field |
+| `↑` `↓` | move the selection | previous / next field |
+| `Tab` / `Shift-Tab` | — | next / previous field |
+| `k` `j` | move the selection | typed into the focused text field |
 | `Enter` | run the selected command | save |
 | `1`–`9` | run the command with that badge | type the digit |
 | `a` | add a command | — |
