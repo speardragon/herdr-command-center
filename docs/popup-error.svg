@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="828" height="239" viewBox="0 0 828 239" font-family="ui-monospace, SFMono-Regular, &#x27;SF Mono&#x27;, Menlo, Consolas, &#x27;DejaVu Sans Mono&#x27;, &#x27;Apple SD Gothic Neo&#x27;, monospace" font-size="15.0">
+<rect width="828" height="239" rx="10.0" fill="#16161e"/>
+<text x="36.00" y="51.30" fill="#c0caf5" font-weight="600" xml:space="preserve">Command Center · config error</text>
+<text x="18.00" y="97.30" fill="#c0caf5" xml:space="preserve">  commands.toml is not valid TOML at line 5: Invalid TOML document: incomplete key-val</text>
+<text x="18.00" y="120.30" fill="#c0caf5" xml:space="preserve">  ue declaration: no value specified</text>
+<text x="36.00" y="212.30" fill="#c0caf5" opacity="0.55" xml:space="preserve">o edit file · esc close</text>
+</svg>

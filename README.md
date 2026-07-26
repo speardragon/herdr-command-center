@@ -7,6 +7,12 @@ prefix keybindings with **one** keybinding. Press it, and a popup lists every
 command you registered. Move with the arrow keys and press Enter, or just press
 the number next to the one you want.
 
+![The Command Center popup listing nine registered commands, the first one highlighted](docs/popup-list.png)
+
+Nine commands, numbered. Press `3` and the branch-tidying command runs — no
+arrow keys, no remembering which prefix key it was under. The line under the
+list shows what the highlighted command actually does before you commit to it.
+
 The point is that you stop memorizing. As you install more herdr plugins, each
 one wants its own `prefix+<key>`, and eventually you cannot remember which key
 does what. Command Center gives all of them one door.
@@ -79,6 +85,11 @@ Badges are **absolute positions**: `3` always runs the third command in the
 file, no matter how far the list has scrolled. Commands past the ninth have no
 badge and are reached with the arrow keys.
 
+Press `a` to add one without leaving the popup. `Tab` moves between fields,
+`←`/`→` cycle `Type` and `Cwd`, and `Enter` writes it to `commands.toml`:
+
+![Adding a command in the popup, with the Command field focused](docs/popup-form.png)
+
 ## The config file
 
 > Upgrading from a version that used `commands.json`? The first time you open the
@@ -147,6 +158,8 @@ command = "ray.file-explorer.open"
 >
 > A malformed file opens the popup in an error mode that names the problem and
 > still lets you press `o` to go fix it; it is never overwritten.
+
+![The popup showing a TOML parse error with the line number](docs/popup-error.png)
 
 ### Anything herdr can do
 

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="828" height="308" viewBox="0 0 828 308" font-family="ui-monospace, SFMono-Regular, &#x27;SF Mono&#x27;, Menlo, Consolas, &#x27;DejaVu Sans Mono&#x27;, &#x27;Apple SD Gothic Neo&#x27;, monospace" font-size="15.0">
+<rect width="828" height="308" rx="10.0" fill="#16161e"/>
+<text x="36.00" y="51.30" fill="#c0caf5" font-weight="600" xml:space="preserve">Command Center · Add command</text>
+<text x="18.00" y="97.30" fill="#c0caf5" xml:space="preserve">    Label        배포 스크립트</text>
+<text x="18.00" y="120.30" fill="#c0caf5" xml:space="preserve">    Type         shell  (←→)</text>
+<text x="36.00" y="143.30" fill="#7dcfff" font-weight="600" xml:space="preserve">› Command      ./scripts/deploy.sh</text>
+<text x="18.00" y="166.30" fill="#c0caf5" xml:space="preserve">    Cwd          focused  (←→)</text>
+<text x="18.00" y="189.30" fill="#c0caf5" xml:space="preserve">    Description  </text>
+<text x="36.00" y="281.30" fill="#c0caf5" opacity="0.55" xml:space="preserve">tab/↑↓ field · ←→ change · enter save · esc cancel</text>
+</svg>

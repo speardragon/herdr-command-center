@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="828" height="423" viewBox="0 0 828 423" font-family="ui-monospace, SFMono-Regular, &#x27;SF Mono&#x27;, Menlo, Consolas, &#x27;DejaVu Sans Mono&#x27;, &#x27;Apple SD Gothic Neo&#x27;, monospace" font-size="15.0">
+<rect width="828" height="423" rx="10.0" fill="#16161e"/>
+<text x="36.00" y="51.30" fill="#c0caf5" font-weight="600" xml:space="preserve">Command Center · 9 commands</text>
+<text x="36.00" y="97.30" fill="#7dcfff" font-weight="600" xml:space="preserve">› 1. Open in VS Code</text>
+<text x="18.00" y="120.30" fill="#c0caf5" xml:space="preserve">    2. File explorer</text>
+<text x="18.00" y="143.30" fill="#c0caf5" xml:space="preserve">    3. 브랜치 정리</text>
+<text x="18.00" y="166.30" fill="#c0caf5" xml:space="preserve">    4. Open pull request</text>
+<text x="18.00" y="189.30" fill="#c0caf5" xml:space="preserve">    5. Agent tool history</text>
+<text x="18.00" y="212.30" fill="#c0caf5" xml:space="preserve">    6. Lazygit in a split</text>
+<text x="18.00" y="235.30" fill="#c0caf5" xml:space="preserve">    7. Run tests</text>
+<text x="18.00" y="258.30" fill="#c0caf5" xml:space="preserve">    8. 서버 로그</text>
+<text x="18.00" y="281.30" fill="#c0caf5" xml:space="preserve">    9. 워크트리 목록</text>
+<text x="36.00" y="327.30" fill="#c0caf5" opacity="0.55" xml:space="preserve">shell · code .</text>
+<text x="36.00" y="350.30" fill="#c0caf5" opacity="0.55" xml:space="preserve">포커스된 페인의 디렉터리를 VS Code로 열기</text>
+<text x="36.00" y="396.30" fill="#c0caf5" opacity="0.55" xml:space="preserve">↑↓ move · enter run · 1-9 run · a add · e edit · d delete · o edit file · esc close</text>
+</svg>

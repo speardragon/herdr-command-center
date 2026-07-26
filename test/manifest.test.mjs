@@ -96,3 +96,29 @@ test('both READMEs document every config field and the migration', async () => {
     assert.ok(stale <= 1, `${name} refers to commands.json ${stale} times outside the migration note`);
   }
 });
+
+test('every screenshot the READMEs reference exists and is described', async () => {
+  const referenced = new Set();
+  for (const name of ['README.md', 'README.ko.md']) {
+    const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
+    const images = [...text.matchAll(/!\[([^\]]*)\]\((docs\/[^)]+\.png)\)/gu)];
+    assert.equal(images.length, 3, `${name} references ${images.length} screenshots, expected 3`);
+    for (const [, alt, path] of images) {
+      // alt text is the only description a screen reader gets
+      assert.ok(alt.trim().length > 0, `${name} has an image with no alt text: ${path}`);
+      await access(new URL(`../${path}`, import.meta.url), constants.R_OK);
+      referenced.add(path);
+    }
+  }
+  // both languages must show the same views, or one reader is shown less
+  assert.equal(referenced.size, 3, `READMEs disagree on which screenshots to show: ${[...referenced]}`);
+});
+
+test('the screenshots are reproducible rather than hand-taken', async () => {
+  await access(new URL('../tools/screenshots.py', import.meta.url), constants.R_OK);
+  const tool = await readFile(new URL('../tools/screenshots.py', import.meta.url), 'utf8');
+  assert.match(tool, /bin\/popup\.mjs/u, 'the generator must drive the real popup');
+  for (const name of ['popup-list', 'popup-form', 'popup-error']) {
+    assert.ok(tool.includes(name), `the generator does not produce ${name}`);
+  }
+});
