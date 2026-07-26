@@ -6243,7 +6243,7 @@ command list."
 
 **Files:**
 - Modify: `src/paths.mjs` (add `legacyCommandsPath`), `src/store.mjs` (TOML + migration), `src/schema.mjs` (drop the JSON serializer), `bin/popup.mjs` and `src/render.mjs` (error copy)
-- Test: `test/store.test.mjs` (rewritten for TOML), `test/paths.test.mjs` (one added case), `test/schema.test.mjs` (drop the `serializeConfig` case), `test/render.test.mjs` and `test/popup.test.mjs` (copy that names the file)
+- Test: `test/store.test.mjs` (rewritten for TOML), `test/paths.test.mjs` (one added case), `test/schema.test.mjs` (drop the `serializeConfig` case), and `test/render.test.mjs`, `test/popup.test.mjs`, `test/actions.test.mjs`, `test/manifest.test.mjs` (copy that names the file)
 
 **Interfaces:**
 - Consumes: `src/toml-config.mjs` (`parseConfigToml`, `renderConfigToml`), `src/toml-edit.mjs` (`applyCommands`).
@@ -6660,7 +6660,7 @@ this script rather than by hand, so nothing is missed or half-renamed:
 ```bash
 python3 - <<'RENAME'
 import pathlib
-for name in ('test/render.test.mjs', 'test/popup.test.mjs'):
+for name in ('test/render.test.mjs', 'test/popup.test.mjs', 'test/actions.test.mjs'):
     p = pathlib.Path(name)
     s = p.read_text(encoding='utf8')
     s = s.replace('commands.json', 'commands.toml')
@@ -6692,12 +6692,30 @@ Then fix that file's imports: drop `serializeConfig` from the `../src/schema.mjs
 import, add `normalizeConfig` to it, and add
 `import { renderConfigToml } from '../src/toml-config.mjs';`.
 
+`test/actions.test.mjs` needs the same treatment, because its `editConfig` tests
+build a real config file:
+
+1. Change `serializeConfig({ schema_version: 1, editor: ['code', '-g'], commands: [] })`
+   to `renderConfigToml(normalizeConfig({ editor: ['code', '-g'], commands: [] }))`.
+2. In the broken-file test, change `writeFile(join(dir, 'commands.toml'), '{ broken', 'utf8')`
+   to `writeFile(join(dir, 'commands.toml'), '[[commands]]\nlabel = ', 'utf8')`.
+3. Replace its `serializeConfig` import with
+   `import { normalizeConfig } from '../src/schema.mjs';` and
+   `import { renderConfigToml } from '../src/toml-config.mjs';`.
+
+`test/manifest.test.mjs` asserts the config file name; Task 16 Step 2 updates it,
+so this task leaves that single failure standing and Task 16 clears it. Note that
+when you finish this task the suite will still have exactly that one failure.
+
 `test/schema.test.mjs` needs no copy change — the shape-rejection test asserts
 nothing about that message. Confirm by running it.
 - [ ] **Step 9: Run the whole suite**
 
 Run: `npm test`
-Expected: PASS — 0 fail. The total moves from 199 to **231**: `serializeConfig`'s test is gone (−1), `test/store.test.mjs` grows from 10 to 15 (+5), `test/paths.test.mjs` grows from 7 to 8 (+1), and the two new files add 13 + 14 (+27). If your count differs, do not adjust a test to reach it — report the discrepancy with the failing or unexpected test names.
+Expected: **231 tests, 1 fail** — the remaining failure is
+`manifest identity matches the shared plugin constants`, which pins the config file
+name and is updated in Task 16 Step 2. Every other test must pass. The total moves
+from 199 to **231**: `serializeConfig`'s test is gone (−1), `test/store.test.mjs` grows from 10 to 15 (+5), `test/paths.test.mjs` grows from 7 to 8 (+1), and the two new files add 13 + 14 (+27). If your count differs, do not adjust a test to reach it — report the discrepancy with the failing or unexpected test names.
 
 - [ ] **Step 10: Commit**
 
