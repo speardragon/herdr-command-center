@@ -78,7 +78,7 @@ herdr server reload-config
 
 ## 설정 파일
 
-> 예전에 쓰던 설정 파일: commands.json. 팝업을 처음 열 때 `commands.toml`로
+> `commands.json`을 쓰던 버전에서 올라오셨다면, 팝업을 처음 열 때 `commands.toml`로
 > 변환하고 원본은 `commands.json.bak`으로 이름만 바꿔 둡니다. 삭제하지 않습니다.
 
 팝업이 편집하는 내용은 전부 TOML 파일 하나에 들어 있고, 이 파일은 직접 손으로

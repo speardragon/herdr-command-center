@@ -81,7 +81,7 @@ badge and are reached with the arrow keys.
 
 ## The config file
 
-> Upgrading from a version that used commands.json. The first time you open the
+> Upgrading from a version that used `commands.json`? The first time you open the
 > popup it converts your file to `commands.toml` and renames the original to
 > `commands.json.bak`. Nothing is deleted.
 

@@ -6762,7 +6762,7 @@ the module that owns the config shape would invite writing the wrong format."
 ## Task 16: Documentation and re-verification
 
 **Files:**
-- Modify: `README.md`, `README.ko.md`, `test/manifest.test.mjs`
+- Modify: `README.md`, `README.ko.md`, `herdr-plugin.toml` (the `edit-config` action title names the config file, and herdr shows it in the action list), `test/manifest.test.mjs`
 - Test: `test/manifest.test.mjs`
 
 - [ ] **Step 1: Update both READMEs**
@@ -6880,8 +6880,10 @@ test('both READMEs document every config field and the migration', async () => {
     }
     assert.ok(text.includes('[[commands]]'), `${name} does not show the TOML block shape`);
     assert.ok(text.includes('commands.json.bak'), `${name} does not explain the migration`);
-    assert.ok(!/commands\.json[^.]/u.test(text.replace(/commands\.json\.bak/gu, '')),
-      `${name} still refers to commands.json outside the migration note`);
+    // One mention is the migration sentence itself; more than that means a stale
+    // reference is still lying around in the troubleshooting or actions section.
+    const stale = (text.replace(/commands\.json\.bak/gu, '').match(/commands\.json/gu) ?? []).length;
+    assert.ok(stale <= 1, `${name} refers to commands.json ${stale} times outside the migration note`);
   }
 });
 ```

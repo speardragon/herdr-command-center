@@ -30,6 +30,6 @@ command = ["node", "bin/open.mjs"]
 
 [[actions]]
 id = "edit-config"
-title = "Command Center: Edit commands.json"
+title = "Command Center: Edit commands.toml"
 contexts = ["global", "workspace"]
 command = ["node", "bin/edit-config.mjs"]
