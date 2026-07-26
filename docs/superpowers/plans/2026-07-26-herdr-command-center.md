@@ -6284,6 +6284,11 @@ test('legacyCommandsPath points at the pre-TOML file name', () => {
 
 and extend that file's import to include `legacyCommandsPath`.
 
+Also repair the pre-existing test in that file, `path helpers append the known
+file names` — Task 13 changed `CONFIG_FILE_NAME`, so its expectation is already
+stale. Change its `commandsPath` expectation from `commands.json` to
+`commands.toml`. Miss this and the task ends with two failures instead of one.
+
 Run: `node --test test/paths.test.mjs`
 Expected: FAIL — `legacyCommandsPath is not a function` (before Step 1) or PASS (after).
 
@@ -6628,7 +6633,7 @@ Expected: PASS — 15 tests.
 
 - [ ] **Step 8: Update the copy that names the file**
 
-Three places still say `commands.json`. Change each to `commands.toml`:
+Four places still say `commands.json`. Change each to `commands.toml`: two in `src/render.mjs`, one in `src/schema.mjs`, one in `bin/popup.mjs`, plus the header comment in `bin/edit-config.mjs`:
 
 In `src/render.mjs`, the empty-list line:
 
@@ -6669,9 +6674,16 @@ for name in ('test/render.test.mjs', 'test/popup.test.mjs', 'test/actions.test.m
 RENAME
 ```
 
-That also fixes the escaped regex forms, since `commands\.json` contains the
-literal substring `commands.json` only after the backslash — verify with
-`grep -rn 'commands\.json' test/` afterwards, which must print nothing.
+The script does **not** fix escaped regex forms: `commands.json` is not a
+substring of `commands\.json`, because the backslash sits between them. Fix those
+by hand. In `test/render.test.mjs` there are two, in the invalid-config tests:
+
+- `/commands\.json/u` becomes `/commands\.toml/u`
+- `/commands\.json is not valid JSON/u` becomes `/commands\.toml is not valid TOML/u`
+
+Afterwards `grep -rn 'commands\\.json' test/` must print only
+`test/paths.test.mjs` (whose `legacyCommandsPath` assertion is meant to keep the
+old name).
 
 Then three edits in `test/popup.test.mjs` that a rename cannot do:
 
@@ -6687,6 +6699,14 @@ Then three edits in `test/popup.test.mjs` that a rename cannot do:
    `serializeConfig({ schema_version: 1, editor: ['code', '--new-window'], commands: [] })`
    to
    `renderConfigToml(normalizeConfig({ editor: ['code', '--new-window'], commands: [] }))`.
+4. There is a **third** `serializeConfig(...)` call, in the external-edit-collision
+   test. Convert it the same way.
+5. Three tests read the file back with `JSON.parse(await readFile(file, 'utf8'))`
+   (the add, delete, and edit tests). That throws on TOML. Replace each with
+   `normalizeConfig(parseConfigToml(await readFile(file, 'utf8')))` and import
+   `parseConfigToml` from `../src/toml-config.mjs`.
+6. One assertion checks the parse-failure copy: `/not valid JSON/u` becomes
+   `/not valid TOML/u`.
 
 Then fix that file's imports: drop `serializeConfig` from the `../src/schema.mjs`
 import, add `normalizeConfig` to it, and add
@@ -6720,7 +6740,7 @@ from 199 to **231**: `serializeConfig`'s test is gone (−1), `test/store.test.m
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/paths.mjs src/store.mjs src/schema.mjs src/render.mjs bin/popup.mjs test/paths.test.mjs test/store.test.mjs test/schema.test.mjs test/render.test.mjs test/popup.test.mjs
+git add src/paths.mjs src/store.mjs src/schema.mjs src/render.mjs bin/popup.mjs bin/edit-config.mjs test/paths.test.mjs test/store.test.mjs test/schema.test.mjs test/render.test.mjs test/popup.test.mjs test/actions.test.mjs
 git commit -m "feat: store the command list in commands.toml
 
 The popup now reads TOML and, on save, splices only the [[commands]] blocks it
