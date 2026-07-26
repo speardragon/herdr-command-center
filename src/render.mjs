@@ -1,4 +1,4 @@
-import { clipLine, wrap } from './text.mjs';
+import { clipLine, displayWidth, wrap } from './text.mjs';
 import { CHOICE_FIELDS, FORM_FIELDS } from './view.mjs';
 
 // Matches the popup size declared in herdr-plugin.toml, used when a caller has
@@ -11,7 +11,7 @@ const PADDING_X = 2;
 const PADDING_Y = 1;
 
 const LIST_FOOTER = '↑↓ move · enter run · 1-9 run · a add · e edit · d delete · o edit file · esc close';
-const FORM_FOOTER = 'tab/↑↓ field · ←→ change · enter save · esc cancel';
+const FORM_FOOTER = 'type to edit · tab/↑↓ field · ←→ change · enter save · esc cancel';
 const CONFIRM_FOOTER = 'y delete · any other key cancels';
 const ERROR_FOOTER = 'o edit file · esc close';
 
@@ -177,6 +177,31 @@ export function renderLines(view, size = {}) {
   // Pad short frames so callers always get exactly the rows they asked for.
   while (lines.length < outerHeight) lines.push('');
   return lines;
+}
+
+// Where the real terminal cursor belongs. The popup parks the hardware cursor at
+// the edit point of a focused text field so that "you can type here right now" is
+// signalled by a blinking cursor rather than by a glyph we draw into the frame.
+// Choice fields get no cursor — they are changed with the arrow keys, and showing
+// a text caret on them would promise typing that does nothing.
+export function textCursor(view, size = {}) {
+  if (view?.mode !== 'form' || !view.form) return null;
+  const field = FORM_FIELDS[view.form.fieldIndex];
+  if (!field || CHOICE_FIELDS.has(field)) return null;
+
+  const { outerWidth, outerHeight } = boundedSize(size);
+  const width = Math.max(1, outerWidth - PADDING_X * 2);
+  const height = Math.max(1, outerHeight - PADDING_Y * 2);
+  // Mirrors renderLines: the footer is reserved and the body gets what is left.
+  const bodyBudget = Math.max(1, height - wrap(FORM_FOOTER, width).length);
+  const bodyLine = 2 + view.form.fieldIndex; // title, blank line, then the fields
+  if (bodyLine >= bodyBudget) return null;
+
+  // "› " + the label padded to FIELD_LABEL_WIDTH + " ", all ASCII.
+  const valueColumn = 2 + FIELD_LABEL_WIDTH + 1;
+  const typed = displayWidth(view.form.fields[field] ?? '');
+  const column = Math.min(valueColumn + typed, width - 1);
+  return { row: PADDING_Y + bodyLine, column: PADDING_X + column };
 }
 
 export function renderView(view, size = {}) {

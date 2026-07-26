@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { displayWidth } from '../src/text.mjs';
 import { createView, reduceKey } from '../src/view.mjs';
-import { renderLines, renderView } from '../src/render.mjs';
+import { renderLines, renderView, textCursor } from '../src/render.mjs';
 
 const SIZE = { columns: 78, rows: 24 };
 
@@ -24,6 +24,10 @@ function doc(labels = ['Open in VS Code', 'Open repo on GitHub', 'File explorer'
 
 function stripAnsi(text) {
   return text.replace(/\u001b\[[0-9;]*m/gu, '');
+}
+
+function press(view, ...keys) {
+  return keys.reduce((current, key) => reduceKey(current, key), view);
 }
 
 test('renderLines fills the terminal exactly and never overflows the width', () => {
@@ -182,4 +186,51 @@ test('a command label containing an escape sequence cannot corrupt the frame', (
   const lines = renderLines(createView({ doc: hostile }), SIZE);
   assert.ok(lines.some((line) => line.includes('<U+001B>')));
   assert.ok(!lines.some((line) => /\u001b\[31m/u.test(line)));
+});
+
+test('textCursor marks the edit point of a focused text field', () => {
+  const view = reduceKey(createView({ doc: doc() }), 'a');
+  // padding(1) + title(0) + blank(1) => the Label row; the value column sits
+  // after the marker and the padded label.
+  assert.deepEqual(textCursor(view, SIZE), { row: 3, column: 17 });
+  assert.deepEqual(textCursor(press(view, 'tab', 'tab'), SIZE), { row: 5, column: 17 });
+  assert.deepEqual(textCursor(press(view, 'tab', 'tab', 'tab', 'tab'), SIZE), { row: 7, column: 17 });
+});
+
+test('textCursor advances past what has been typed, counting CJK as two cells', () => {
+  let view = reduceKey(createView({ doc: doc() }), 'a');
+  assert.equal(textCursor(view, SIZE).column, 17);
+  view = press(view, 'a', 'b');
+  assert.equal(textCursor(view, SIZE).column, 19);
+  view = press(view, '배', '포');
+  assert.equal(textCursor(view, SIZE).column, 23);
+});
+
+test('textCursor gives choice fields no caret, since typing does nothing there', () => {
+  const view = reduceKey(createView({ doc: doc() }), 'a');
+  assert.equal(textCursor(press(view, 'tab'), SIZE), null, 'Type');
+  assert.equal(textCursor(press(view, 'tab', 'tab', 'tab'), SIZE), null, 'Cwd');
+});
+
+test('textCursor is null wherever nothing is editable', () => {
+  assert.equal(textCursor(createView({ doc: doc() }), SIZE), null, 'list');
+  assert.equal(textCursor(reduceKey(createView({ doc: doc() }), 'd'), SIZE), null, 'confirm');
+  assert.equal(textCursor(createView({ doc: doc(), error: 'broken' }), SIZE), null, 'error');
+  assert.equal(textCursor(null, SIZE), null);
+});
+
+test('textCursor never points outside the frame', () => {
+  const view = reduceKey(createView({ doc: doc() }), 'a');
+  // A terminal too short to show the field at all.
+  assert.equal(textCursor(view, { columns: 78, rows: 4 }), null);
+  // A terminal too narrow for the typed value: clamp to the last usable column.
+  let typed = view;
+  for (let index = 0; index < 40; index += 1) typed = reduceKey(typed, 'x');
+  const cursor = textCursor(typed, { columns: 30, rows: 24 });
+  assert.ok(cursor.column <= 30 - 1, `column ${cursor.column} escapes a 30-column frame`);
+});
+
+test('the form footer says the fields can be typed into', () => {
+  const text = renderView(reduceKey(createView({ doc: doc() }), 'a'), SIZE);
+  assert.match(text, /type to edit/u);
 });

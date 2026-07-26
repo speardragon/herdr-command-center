@@ -73,7 +73,10 @@ export function createFakeStdout({ columns = 78, rows = 24 } = {}) {
     },
     on() { return this; },
     removeListener() { return this; },
-    get lastFrame() { return frames.at(-1) ?? ''; },
+    // The popup also writes cursor bookkeeping that paints nothing, so tests that
+    // care about what the user sees want the last frame, not the last write.
+    get renderedFrames() { return frames.filter((frame) => frame.includes('\u001b[2J')); },
+    get lastFrame() { return this.renderedFrames.at(-1) ?? ''; },
   };
 }
 

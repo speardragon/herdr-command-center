@@ -13,7 +13,7 @@ import { promisify } from 'node:util';
 import { readContext } from '../src/context.mjs';
 import { createKeyDecoder } from '../src/keys.mjs';
 import { commandsPath, resolveConfigDir, resolveStateDir, runLogPath } from '../src/paths.mjs';
-import { renderView } from '../src/render.mjs';
+import { renderView, textCursor } from '../src/render.mjs';
 import { ConfigError, DEFAULT_EDITOR } from '../src/schema.mjs';
 import { ensureStore, saveStore } from '../src/store.mjs';
 import { createView, reduceKey } from '../src/view.mjs';
@@ -21,6 +21,11 @@ import { createView, reduceKey } from '../src/view.mjs';
 const execFileAsync = promisify(execFileCallback);
 
 const CLEAR_SCREEN = '\u001b[2J\u001b[H';
+const HIDE_CURSOR = '\u001b[?25l';
+const SHOW_CURSOR = '\u001b[?25h';
+// DECSCUSR: a blinking bar reads as a text caret, which is the point.
+const BLINKING_BAR = '\u001b[5 q';
+const DEFAULT_CURSOR_SHAPE = '\u001b[0 q';
 const RUNNER_URL = new URL('./run.mjs', import.meta.url);
 const SIGNAL_EXIT_CODES = Object.freeze({
   SIGINT: 130,
@@ -104,7 +109,14 @@ export async function runPopup({
   };
   const draw = () => {
     try {
-      stdout.write(`${CLEAR_SCREEN}${renderView(view, screenSize(stdout, useColor))}`);
+      const size = screenSize(stdout, useColor);
+      const cursor = textCursor(view, size);
+      // Hide first so the cursor does not visibly skate across the repaint, then
+      // park it on the edit point when a text field has focus.
+      const frame = `${HIDE_CURSOR}${CLEAR_SCREEN}${renderView(view, size)}`;
+      stdout.write(cursor
+        ? `${frame}\u001b[${cursor.row + 1};${cursor.column + 1}H${BLINKING_BAR}${SHOW_CURSOR}`
+        : `${frame}${DEFAULT_CURSOR_SHAPE}`);
     } catch {
       requestStop(1);
     }
@@ -194,6 +206,11 @@ export async function runPopup({
     diagnostic(stderr, 'the popup closed after an internal failure');
     return stopCode ?? 1;
   } finally {
+    try {
+      stdout.write(`${DEFAULT_CURSOR_SHAPE}${SHOW_CURSOR}`);
+    } catch {
+      // The pane is going away regardless; never mask the real exit code.
+    }
     restoreRaw();
     for (const [signal, handler] of signalHandlers) processRef.removeListener?.(signal, handler);
     processRef.removeListener?.('SIGWINCH', onResize);

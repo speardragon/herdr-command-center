@@ -102,8 +102,11 @@ test('runPopup enters and restores raw mode', async () => {
 test('runPopup clears the screen before each frame', async () => {
   const { dir } = await scratch();
   const { stdout } = await harness(['\u001b[B', '\u001b'], { dir });
-  assert.ok(stdout.frames.length >= 2);
-  for (const frame of stdout.frames) assert.ok(frame.startsWith('\u001b[2J\u001b[H'), frame.slice(0, 12));
+  assert.ok(stdout.renderedFrames.length >= 2);
+  // Each paint hides the cursor first so it cannot skate across the redraw.
+  for (const frame of stdout.renderedFrames) {
+    assert.ok(frame.startsWith('\u001b[?25l\u001b[2J\u001b[H'), frame.slice(0, 20));
+  }
 });
 
 test('escape closes without spawning anything', async () => {
@@ -268,16 +271,19 @@ test('a save that collides with an external edit switches to error mode', async 
 
 test('NO_COLOR and TERM=dumb turn styling off', async () => {
   const { dir } = await scratch();
+  // Assert on the styling itself rather than on a byte offset: the frame also
+  // carries cursor control sequences that are not styling.
+  const SGR = /\u001b\[(?:0|1|2|3[236])m/u;
   const plain = await harness(['\u001b'], { dir, extraEnv: { NO_COLOR: '1' } });
-  assert.ok(!plain.stdout.lastFrame.slice(7).includes('\u001b['));
+  assert.doesNotMatch(plain.stdout.lastFrame, SGR);
   const dumb = await harness(['\u001b'], { dir, extraEnv: { TERM: 'dumb' } });
-  assert.ok(!dumb.stdout.lastFrame.slice(7).includes('\u001b['));
+  assert.doesNotMatch(dumb.stdout.lastFrame, SGR);
 });
 
 test('styling is on for a capable terminal', async () => {
   const { dir } = await scratch();
   const { stdout } = await harness(['\u001b'], { dir });
-  assert.ok(stdout.lastFrame.slice(7).includes('\u001b['));
+  assert.match(stdout.lastFrame, /\u001b\[1m/u, 'the header is bold');
 });
 
 test('input ending without a decision exits 1 and restores the terminal', async () => {
@@ -347,4 +353,37 @@ test('a resize redraws at the new size', async () => {
   assert.equal(stdout.lastFrame.split('\n').length, 12);
   stdin.push('\u001b');
   assert.equal(await pending, 0);
+});
+
+test('the popup parks a blinking cursor on a focused text field', async () => {
+  const { dir } = await scratch();
+  const { stdout } = await harness(['a'], { dir });
+  const form = stdout.frames.filter((frame) => frame.includes('Add command')).at(-1);
+  assert.ok(form.includes('\u001b[?25h'), 'the cursor is shown');
+  assert.ok(form.includes('\u001b[5 q'), 'a blinking bar is requested');
+  // row 3 / column 17 zero-based is 4;18 in the terminal's 1-based addressing
+  assert.ok(form.includes('\u001b[4;18H'), form.slice(-60));
+});
+
+test('the popup keeps the cursor hidden where nothing is editable', async () => {
+  const { dir } = await scratch();
+  const { stdout } = await harness(['a'], { dir });
+  const list = stdout.frames.find((frame) => frame.includes('3 commands'));
+  assert.ok(list.includes('\u001b[?25l'), 'the cursor is hidden');
+  assert.ok(!list.includes('\u001b[?25h'), 'and never shown again in that frame');
+});
+
+test('the popup hides the cursor again on a choice field', async () => {
+  const { dir } = await scratch();
+  const { stdout } = await harness(['a', '\t'], { dir });
+  const type = stdout.frames.filter((frame) => frame.includes('Add command')).at(-1);
+  assert.ok(!type.includes('\u001b[?25h'), 'Type takes arrows, not typing');
+});
+
+test('the popup leaves the terminal with a visible default cursor', async () => {
+  const { dir } = await scratch();
+  const { stdout } = await harness(['\u001b'], { dir });
+  const last = stdout.frames.at(-1);
+  assert.ok(last.includes('\u001b[0 q'), 'the cursor shape is reset');
+  assert.ok(last.includes('\u001b[?25h'), 'and the cursor is left visible');
 });
