@@ -155,11 +155,13 @@ Each is a runnable stub so the manifest test's `access()` checks pass. `bin/open
 
 ```js
 #!/usr/bin/env node
-// Implemented in Task 12.
+// Implemented in Task 11.
 process.exitCode = 0;
 ```
 
-Write the same three-line stub (with its own task reference) to `bin/popup.mjs` (Task 11), `bin/run.mjs` (Task 10), and `bin/edit-config.mjs` (Task 12).
+Write the same three-line stub to the other three, each naming the task that
+replaces it: `bin/run.mjs` (Task 9), `bin/popup.mjs` (Task 10), and
+`bin/edit-config.mjs` (Task 11).
 
 - [ ] **Step 7: Write `herdr-plugin.toml`**
 
