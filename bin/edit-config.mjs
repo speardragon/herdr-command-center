@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// The `edit-config` action: open commands.json in the configured editor without
+// The `edit-config` action: open commands.toml in the configured editor without
 // going through the popup at all, for when the user already knows what to change.
 
 import { execFile as execFileCallback, spawn as spawnChild } from 'node:child_process';
