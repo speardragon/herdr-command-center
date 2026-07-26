@@ -166,7 +166,8 @@ BROKEN = 'schema_version = 1\neditor = ["code"]\n\n[[commands]]\nlabel = \n'
 # terminal height, not crops of a taller one.
 SHOTS = [
     ('popup-list', DEMO, [], 18, 'the command list'),
-    ('popup-form', DEMO, ['a', '배포 스크립트', '\t\t', './scripts/deploy.sh'], 13, 'adding a command'),
+    ('popup-form', DEMO, ['a', '배포 스크립트', '\t\t', './scripts/deploy.sh'], 13,
+     'adding a command, caret on the Command field'),
     ('popup-error', BROKEN, [], 10, 'a config file with a typo'),
 ]
 
@@ -190,6 +191,12 @@ PAD_Y = 16.0
 RADIUS = 10.0
 
 SGR = re.compile(r'\x1b\[([0-9;]*)m')
+# The popup parks the real terminal cursor on a focused text field by emitting an
+# explicit row;column address. That is the only place it does so, which makes the
+# escape itself the signal that a caret belongs in the picture.
+CURSOR_AT = re.compile(r'\x1b\[(\d+);(\d+)H')
+CURSOR_NOISE = re.compile(r'\x1b\[\?25[hl]|\x1b\[[0-9]* q|\x1b\[[0-9]+;[0-9]+H')
+CURSOR_COLOR = CYAN
 WIDE_RANGES = (
     (0x1100, 0x115f), (0x2329, 0x232a), (0x2e80, 0xa4cf), (0xac00, 0xd7a3),
     (0xf900, 0xfaff), (0xfe10, 0xfe19), (0xfe30, 0xfe6f), (0xff00, 0xff60),
@@ -239,6 +246,12 @@ def runs(line):
 
 
 def render(frame, cols=88):
+    caret = None
+    addressed = CURSOR_AT.findall(frame)
+    if addressed:
+        row, col = addressed[-1]
+        caret = (int(row) - 1, int(col) - 1)  # the terminal counts from one
+    frame = CURSOR_NOISE.sub('', frame)
     lines = frame.split('\n')
     rows = len(lines)
     width = cols * CELL_W + PAD_X * 2
@@ -266,6 +279,13 @@ def render(frame, cols=88):
                 attrs.append('xml:space="preserve"')
                 parts.append(f'<text {" ".join(attrs)}>{html.escape(text)}</text>')
             col += display_width(text)
+    if caret is not None:
+        crow, ccol = caret
+        x = PAD_X + ccol * CELL_W
+        y = PAD_Y + crow * LINE_H + 2.0
+        parts.append(
+            f'<rect x="{x:.2f}" y="{y:.2f}" width="2.2" height="{FONT_SIZE * 1.2:.1f}" '
+            f'rx="1" fill="{CURSOR_COLOR}"/>')
     parts.append('</svg>')
     return '\n'.join(parts)
 

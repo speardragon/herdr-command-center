@@ -6987,3 +6987,50 @@ Expected: all three greps print `1` — the comment survived, the commented-out
 block survived, and the edit landed.
 
 ---
+
+---
+
+## Task 17: Show a caret where typing works
+
+Done directly rather than through a subagent, and recorded here because it
+changes files Tasks 7 and 10 created — their blocks no longer match disk for
+`src/render.mjs`, `bin/popup.mjs`, `test/render.test.mjs`, `test/popup.test.mjs`
+and `test/helpers/fake-tty.mjs`.
+
+**The problem:** in the add/edit form, a text field could be typed into
+immediately, but nothing said so. The terminal cursor was left wherever the last
+write happened to end — parked at the end of the footer — so the form looked
+inert and read as though it needed a key to unlock editing first.
+
+**The fix:** park the *real* terminal cursor on the edit point of a focused text
+field, as a blinking bar, and hide it everywhere nothing is editable. A real
+cursor is the right answer rather than a drawn glyph: it blinks natively at the
+terminal's own rate with no redraw loop, it cannot drift out of alignment with
+the text, and it is what every other text field the user has ever used does.
+
+- `src/render.mjs` gains `textCursor(view, size) -> { row, column } | null`,
+  which returns a position only in `form` mode on a field outside `CHOICE_FIELDS`,
+  accounts for the display width of what has been typed (so Korean advances two
+  cells per syllable), and returns `null` when the field would fall outside the
+  frame. `FORM_FOOTER` also gained `type to edit`, so the affordance is stated in
+  words as well as shown.
+- `bin/popup.mjs` hides the cursor before each repaint so it cannot skate across
+  the redraw, then addresses it and requests a blinking bar (`DECSCUSR 5`) when
+  `textCursor` returns a position. It restores the default shape and visibility in
+  its `finally`, so a popup that dies mid-edit cannot leave the terminal with an
+  invisible cursor.
+- `CHOICE_FIELDS` deliberately get no caret: they are changed with the arrow keys,
+  and a caret there would promise typing that does nothing.
+
+**Test fallout worth knowing about:** adding a write to the `finally` block broke
+five existing popup tests that had been treating "the last write" as "the last
+painted frame". `test/helpers/fake-tty.mjs` now exposes `renderedFrames` and
+redefines `lastFrame` to mean the last frame that actually painted, and the two
+colour tests now assert on SGR codes instead of slicing a fixed byte offset off
+the front of the frame. Those assertions were relying on incidental details, and
+the change is what exposed it.
+
+**Screenshots:** `tools/screenshots.py` now reads the cursor address out of the
+captured output and draws the caret, so `docs/popup-form.png` shows the affordance
+this task adds. The generator only draws a caret where the popup actually
+addressed one, which keeps the picture honest.

@@ -86,7 +86,11 @@ file, no matter how far the list has scrolled. Commands past the ninth have no
 badge and are reached with the arrow keys.
 
 Press `a` to add one without leaving the popup. `Tab` moves between fields,
-`←`/`→` cycle `Type` and `Cwd`, and `Enter` writes it to `commands.toml`:
+`←`/`→` cycle `Type` and `Cwd`, and `Enter` writes it to `commands.toml`.
+
+A blinking caret marks the field you are typing into, so there is nothing to
+guess: just type. `Type` and `Cwd` deliberately have no caret — they are changed
+with the arrow keys, and a caret there would promise typing that does nothing.
 
 ![Adding a command in the popup, with the Command field focused](docs/popup-form.png)
 
