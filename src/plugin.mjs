@@ -1,6 +1,9 @@
 export const PLUGIN_ID = 'cdragon.command-center';
 export const POPUP_ENTRYPOINT_ID = 'palette';
-export const CONFIG_FILE_NAME = 'commands.json';
+export const CONFIG_FILE_NAME = 'commands.toml';
+// Tasks 1-12 shipped commands.json; ensureStore migrates it once and renames the
+// original rather than deleting it.
+export const LEGACY_CONFIG_FILE_NAME = 'commands.json';
 export const RUN_LOG_FILE_NAME = 'run.log';
 // Config/state paths come from herdr or from the CLI; bound them so a hostile or
 // corrupted value can never be spliced into a spawn.

@@ -9,6 +9,9 @@ platforms = ["macos", "linux"]
 command = ["node", "-e", "const major = Number(process.versions.node.split('.')[0]); if (major < 22) { console.error('Node.js >= 22 required'); process.exit(1); }"]
 
 [[build]]
+command = ["npm", "ci"]
+
+[[build]]
 command = ["npm", "test"]
 
 [[panes]]

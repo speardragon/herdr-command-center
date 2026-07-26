@@ -9,5 +9,8 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "smol-toml": "1.7.1"
   }
 }
