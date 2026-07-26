@@ -1,0 +1,13 @@
+{
+  "name": "@ray/command-center",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "herdr plugin — one popup that lists and runs every command you registered",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
