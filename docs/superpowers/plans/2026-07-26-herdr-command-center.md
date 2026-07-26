@@ -5511,3 +5511,1420 @@ Checked across tasks:
 ## Execution Handoff
 
 Plan complete and saved to `docs/superpowers/plans/2026-07-26-herdr-command-center.md`.
+
+# Addendum: move the config file from JSON to TOML
+
+> **Status:** Tasks 1–12 shipped with `commands.json`. This addendum converts the
+> config file to `commands.toml`. Same execution rules as the rest of the plan.
+
+**Why:** every other file the user hand-edits in herdr is TOML (`config.toml`,
+`herdr-plugin.toml`), and the user comments those files heavily. JSON cannot hold
+a comment at all, so "comment a command out for a week" was impossible, and the
+`config error` mode existed largely to catch brace/comma slips TOML avoids.
+
+**The hard part, and the design that answers it:** the popup *writes* this file,
+and every mainstream TOML serializer drops comments on write. Re-rendering the
+whole file would therefore *promise* comments and then eat them — strictly worse
+than JSON. So the popup never re-renders the file. It splits the document into
+`[[commands]]` blocks plus opaque text, and only ever replaces, removes, or
+appends individual blocks. Preamble, blank lines, comments between blocks, and
+commented-out blocks are preserved byte-for-byte. A command whose fields did not
+change keeps its original block text verbatim, hand-formatting and all.
+
+**Contract to document:** comments *inside* a block you edit through the popup
+are lost, because that block is re-rendered. Everything else survives.
+
+## Addendum constraints
+
+- Config file is `commands.toml`. `commands.json` from Tasks 1–12 is migrated once, and the old file is renamed to `commands.json.bak` rather than deleted.
+- One runtime dependency is now allowed: `smol-toml` (TOML 1.0, zero transitive deps, ESM). Verified against Node 22.20: parses the exact document shape, handles Korean text and escaped quotes, ignores commented-out `[[commands]]` blocks, and throws a typed `TomlError` on malformed input. Parsing hand-edited text is not something to hand-roll.
+- The manifest gains an `npm ci` build step **before** `npm test`, and `package-lock.json` is committed.
+- `normalizeConfig` / `normalizeCommand` in `src/schema.mjs` are format-agnostic (they take a plain object) and do **not** change. Only serialization and reading change.
+- The popup never edits the `editor` key. If a save is asked to change it, `saveStore` falls back to a full re-render — documented, and unreachable through the popup UI.
+
+---
+
+## Task 13: TOML codec for the config document
+
+**Files:**
+- Create: `src/toml-config.mjs`
+- Modify: `package.json` (add `smol-toml`), `herdr-plugin.toml` (add `npm ci` build step), `src/plugin.mjs` (config file names)
+- Test: `test/toml-config.test.mjs`
+
+**Interfaces:**
+- Consumes: `src/schema.mjs` (`ConfigError`).
+- Produces:
+  - `escapeTomlString(value: string): string`
+  - `renderCommandBlock(command: Command): string` — one `[[commands]]` block, newline-terminated
+  - `renderConfigToml(doc: ConfigDoc): string` — the whole file, used for seeding and for the `editor`-changed fallback
+  - `parseConfigToml(text: string, fileName?: string): object` — throws `ConfigError` on malformed TOML
+  - From `src/plugin.mjs`: `CONFIG_FILE_NAME` becomes `'commands.toml'`, and a new `LEGACY_CONFIG_FILE_NAME = 'commands.json'`
+
+- [ ] **Step 1: Add the dependency and the build gate**
+
+```bash
+npm install smol-toml@1.7.1 --save-exact
+```
+
+Then confirm the lockfile exists and the tree is flat:
+
+```bash
+node -e "const p=require('./package.json');console.log(p.dependencies)"
+test -f package-lock.json && echo "lockfile present"
+```
+Expected: `{ 'smol-toml': '1.7.1' }` and `lockfile present`.
+
+In `herdr-plugin.toml`, insert an `npm ci` build step immediately **before** the `npm test` step, so a fresh `herdr plugin install` has the dependency before the tests run:
+
+```toml
+[[build]]
+command = ["npm", "ci"]
+
+[[build]]
+command = ["npm", "test"]
+```
+
+- [ ] **Step 2: Update the file names in `src/plugin.mjs`**
+
+Replace the `CONFIG_FILE_NAME` line and add the legacy name:
+
+```js
+export const CONFIG_FILE_NAME = 'commands.toml';
+// Tasks 1-12 shipped commands.json; ensureStore migrates it once and renames the
+// original rather than deleting it.
+export const LEGACY_CONFIG_FILE_NAME = 'commands.json';
+```
+
+- [ ] **Step 3: Write the failing test `test/toml-config.test.mjs`**
+
+```js
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { parse as parseToml } from 'smol-toml';
+
+import { ConfigError, defaultConfig, normalizeConfig } from '../src/schema.mjs';
+import {
+  escapeTomlString,
+  parseConfigToml,
+  renderCommandBlock,
+  renderConfigToml,
+} from '../src/toml-config.mjs';
+
+const COMMAND = Object.freeze({
+  id: 'open-in-vs-code',
+  label: 'Open in VS Code',
+  type: 'shell',
+  command: 'code .',
+  cwd: 'focused',
+  description: 'Open the focused directory',
+});
+
+test('escapeTomlString escapes what TOML basic strings require', () => {
+  assert.equal(escapeTomlString('plain'), 'plain');
+  assert.equal(escapeTomlString('say "hi"'), 'say \\"hi\\"');
+  assert.equal(escapeTomlString('back\\slash'), 'back\\\\slash');
+  assert.equal(escapeTomlString('a\nb'), 'a\\nb');
+  assert.equal(escapeTomlString('a\tb'), 'a\\tb');
+  assert.equal(escapeTomlString('a\rb'), 'a\\rb');
+});
+
+test('escapeTomlString escapes other control characters as \\uXXXX', () => {
+  assert.equal(escapeTomlString('a\u0000b'), 'a\\u0000b');
+  assert.equal(escapeTomlString('a\u0007b'), 'a\\u0007b');
+});
+
+test('escapeTomlString leaves Korean and emoji alone', () => {
+  assert.equal(escapeTomlString('브랜치 정리'), '브랜치 정리');
+  assert.equal(escapeTomlString('🚀'), '🚀');
+});
+
+test('renderCommandBlock emits a parseable block with a stable key order', () => {
+  const text = renderCommandBlock(COMMAND);
+  assert.equal(text, [
+    '[[commands]]',
+    'id = "open-in-vs-code"',
+    'label = "Open in VS Code"',
+    'type = "shell"',
+    'command = "code ."',
+    'cwd = "focused"',
+    'description = "Open the focused directory"',
+    '',
+  ].join('\n'));
+  assert.deepEqual(parseToml(text).commands[0], COMMAND);
+});
+
+test('renderCommandBlock omits an empty description to keep files tidy', () => {
+  const text = renderCommandBlock({ ...COMMAND, description: '' });
+  assert.ok(!text.includes('description'));
+  assert.equal(parseToml(text).commands[0].description, undefined);
+});
+
+test('renderCommandBlock survives a label full of quotes and backslashes', () => {
+  const hostile = { ...COMMAND, label: 'say "hi" \\ bye', command: 'echo "x"' };
+  const parsed = parseToml(renderCommandBlock(hostile)).commands[0];
+  assert.equal(parsed.label, 'say "hi" \\ bye');
+  assert.equal(parsed.command, 'echo "x"');
+});
+
+test('renderConfigToml round-trips the default config exactly', () => {
+  const doc = defaultConfig();
+  const text = renderConfigToml(doc);
+  assert.deepEqual(normalizeConfig(parseConfigToml(text)), doc);
+});
+
+test('renderConfigToml writes the header keys before any block', () => {
+  const text = renderConfigToml(defaultConfig());
+  assert.match(text, /^schema_version = 1\neditor = \["code"\]\n/u);
+  assert.ok(text.indexOf('schema_version') < text.indexOf('[[commands]]'));
+});
+
+test('renderConfigToml round-trips a Korean, multi-arg-editor config', () => {
+  const doc = normalizeConfig({
+    editor: ['code', '--new-window'],
+    commands: [
+      { label: '브랜치 정리', type: 'shell', command: 'git branch --merged', description: '병합된 브랜치 보기' },
+      { label: '파일 탐색기', type: 'plugin_action', command: 'ray.file-explorer.open' },
+    ],
+  });
+  assert.deepEqual(normalizeConfig(parseConfigToml(renderConfigToml(doc))), doc);
+});
+
+test('renderConfigToml handles an empty command list', () => {
+  const doc = normalizeConfig({ commands: [] });
+  assert.deepEqual(normalizeConfig(parseConfigToml(renderConfigToml(doc))), doc);
+});
+
+test('parseConfigToml accepts comments and commented-out blocks', () => {
+  const value = parseConfigToml([
+    'schema_version = 1',
+    'editor = ["code"]',
+    '',
+    '# the ones I actually use',
+    '[[commands]]',
+    'label = "Ls"',
+    'type = "shell"',
+    'command = "ls"   # trailing comment',
+    '',
+    '# [[commands]]',
+    '# label = "Lazygit"',
+    '# type = "shell"',
+    '# command = "lazygit"',
+    '',
+  ].join('\n'));
+  assert.equal(value.commands.length, 1);
+  assert.equal(value.commands[0].command, 'ls');
+});
+
+test('parseConfigToml reports malformed TOML as a ConfigError naming the file', () => {
+  assert.throws(() => parseConfigToml('label = ', 'commands.toml'), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /commands\.toml/u);
+    assert.match(error.message, /not valid TOML/u);
+    return true;
+  });
+});
+
+test('parseConfigToml reports a duplicated key rather than throwing raw', () => {
+  assert.throws(
+    () => parseConfigToml('a = 1\na = 2'),
+    (error) => error instanceof ConfigError,
+  );
+});
+```
+
+- [ ] **Step 4: Run it to confirm it fails**
+
+Run: `node --test test/toml-config.test.mjs`
+Expected: FAIL — `Cannot find module '.../src/toml-config.mjs'`.
+
+- [ ] **Step 5: Write `src/toml-config.mjs`**
+
+```js
+import { parse as parseToml } from 'smol-toml';
+
+import { ConfigError } from './schema.mjs';
+
+// Key order is fixed so a block the popup rewrites still reads like the ones the
+// user wrote by hand.
+const COMMAND_KEYS = Object.freeze(['id', 'label', 'type', 'command', 'cwd', 'description']);
+const SIMPLE_ESCAPES = Object.freeze({
+  '\\': '\\\\',
+  '"': '\\"',
+  '\b': '\\b',
+  '\t': '\\t',
+  '\n': '\\n',
+  '\f': '\\f',
+  '\r': '\\r',
+});
+
+export function escapeTomlString(value) {
+  let out = '';
+  for (const character of String(value ?? '')) {
+    const simple = SIMPLE_ESCAPES[character];
+    if (simple !== undefined) {
+      out += simple;
+      continue;
+    }
+    const code = character.codePointAt(0);
+    if (code <= 0x1f || code === 0x7f) {
+      out += `\\u${code.toString(16).toUpperCase().padStart(4, '0')}`;
+      continue;
+    }
+    out += character;
+  }
+  return out;
+}
+
+function keyValue(key, value) {
+  return `${key} = "${escapeTomlString(value)}"`;
+}
+
+export function renderCommandBlock(command) {
+  const lines = ['[[commands]]'];
+  for (const key of COMMAND_KEYS) {
+    // An empty description would just be noise in a file meant to be read.
+    if (key === 'description' && !command[key]) continue;
+    lines.push(keyValue(key, command[key]));
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+// Whole-file render. Used for seeding a new config and for the rare fallback when
+// a save changes something outside the [[commands]] blocks. Ordinary popup edits
+// go through applyCommands in toml-edit.mjs so comments survive.
+export function renderConfigToml(doc) {
+  const editor = doc.editor.map((entry) => `"${escapeTomlString(entry)}"`).join(', ');
+  const header = `schema_version = ${doc.schema_version}\neditor = [${editor}]\n`;
+  if (doc.commands.length === 0) return header;
+  return `${header}\n${doc.commands.map((command) => renderCommandBlock(command)).join('\n')}`;
+}
+
+export function parseConfigToml(text, fileName = 'commands.toml') {
+  try {
+    return parseToml(String(text));
+  } catch (error) {
+    const line = Number.isSafeInteger(error?.line) ? ` at line ${error.line}` : '';
+    const detail = typeof error?.message === 'string' && error.message.length <= 200
+      ? `: ${error.message}`
+      : '';
+    throw new ConfigError(`${fileName} is not valid TOML${line}${detail}`);
+  }
+}
+```
+
+- [ ] **Step 6: Run the codec tests**
+
+Run: `node --test test/toml-config.test.mjs`
+Expected: PASS — 13 tests.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add package.json package-lock.json herdr-plugin.toml src/plugin.mjs src/toml-config.mjs test/toml-config.test.mjs
+git commit -m "feat: add a TOML codec for the command config
+
+Every other file the user hand-edits in herdr is TOML, and JSON cannot hold a
+comment, so a command could not be annotated or temporarily commented out. This
+adds the read and render half of the move.
+
+Parsing is delegated to smol-toml rather than hand-rolled: this file is
+hand-edited, so the parser sees untrusted text where quoting, escapes and inline
+comments all have to be right. It is the plugin's only runtime dependency, has
+no transitive deps, and the manifest now runs npm ci before npm test so a fresh
+install has it.
+
+renderConfigToml is only for seeding a new file. Ordinary edits go through the
+block-level writer added next, so comments survive a save."
+```
+
+---
+
+## Task 14: Block-level TOML writer
+
+**Files:**
+- Create: `src/toml-edit.mjs`
+- Test: `test/toml-edit.test.mjs`
+
+**Interfaces:**
+- Consumes: `src/toml-config.mjs` (`parseConfigToml`, `renderCommandBlock`).
+- Produces:
+  - `splitDocument(text: string): Array<{ kind: 'command' | 'opaque', text: string }>`
+  - `joinDocument(segments): string`
+  - `applyCommands(text: string, commands: Command[]): string`
+
+Two invariants the tests pin down, and they are the reason this module exists:
+
+1. `joinDocument(splitDocument(text)) === text` for any input. The splitter never loses or reorders a byte.
+2. `applyCommands` only ever touches `command` segments. Every `opaque` segment — preamble, blank lines, comments between blocks, commented-out `[[commands]]` blocks — comes out byte-identical and in its original position.
+
+A command whose fields all match its existing block keeps that block's original
+text, so hand-formatting and in-block comments survive an unrelated edit.
+
+- [ ] **Step 1: Write the failing test `test/toml-edit.test.mjs`**
+
+```js
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { normalizeConfig } from '../src/schema.mjs';
+import { parseConfigToml } from '../src/toml-config.mjs';
+import { applyCommands, joinDocument, splitDocument } from '../src/toml-edit.mjs';
+
+const HAND_WRITTEN = [
+  'schema_version = 1',
+  'editor = ["code"]',
+  '',
+  '# 자주 쓰는 것들',
+  '[[commands]]',
+  'id = "vscode"',
+  'label = "Open in VS Code"',
+  'type = "shell"',
+  'command = "code ."',
+  'cwd = "focused"',
+  '',
+  '[[commands]]',
+  'id = "browse"',
+  'label = "Open repo on GitHub"',
+  'type = "shell"',
+  'command = "gh browse"',
+  'cwd = "focused"',
+  '',
+  '# 잠시 끔',
+  '# [[commands]]',
+  '# label = "Lazygit"',
+  '# command = "lazygit"',
+  '',
+].join('\n');
+
+function commandsOf(text) {
+  return normalizeConfig(parseConfigToml(text)).commands;
+}
+
+function withField(commands, id, field, value) {
+  return commands.map((command) => (command.id === id ? { ...command, [field]: value } : command));
+}
+
+test('splitDocument round-trips any document byte-for-byte', () => {
+  for (const text of [
+    HAND_WRITTEN,
+    '',
+    'editor = ["code"]\n',
+    '[[commands]]\nid = "a"\n',
+    '\n\n\n',
+    '# only a comment',
+    'no trailing newline',
+  ]) {
+    assert.equal(joinDocument(splitDocument(text)), text, JSON.stringify(text.slice(0, 30)));
+  }
+});
+
+test('splitDocument finds each real block and leaves comments opaque', () => {
+  const segments = splitDocument(HAND_WRITTEN);
+  const commands = segments.filter((segment) => segment.kind === 'command');
+  assert.equal(commands.length, 2);
+  assert.ok(commands[0].text.startsWith('[[commands]]'));
+  assert.ok(commands[0].text.includes('id = "vscode"'));
+  // The commented-out block is never a command segment.
+  assert.ok(segments.every((segment) => (
+    segment.kind === 'opaque' || !segment.text.includes('# [[commands]]')
+  )));
+  assert.ok(joinDocument(segments.filter((s) => s.kind === 'opaque')).includes('# 잠시 끔'));
+});
+
+test('splitDocument ignores an indented or commented header', () => {
+  const text = ['# [[commands]]', '  # [[commands]]', 'x = 1'].join('\n');
+  assert.equal(splitDocument(text).filter((s) => s.kind === 'command').length, 0);
+});
+
+test('applyCommands is a no-op when nothing changed', () => {
+  assert.equal(applyCommands(HAND_WRITTEN, commandsOf(HAND_WRITTEN)), HAND_WRITTEN);
+});
+
+test('editing one command leaves every other byte untouched', () => {
+  const next = withField(commandsOf(HAND_WRITTEN), 'browse', 'label', 'Repo on GitHub');
+  const result = applyCommands(HAND_WRITTEN, next);
+  assert.ok(result.includes('# 자주 쓰는 것들'), 'preamble comment survived');
+  assert.ok(result.includes('# 잠시 끔'), 'trailing comment survived');
+  assert.ok(result.includes('# [[commands]]'), 'commented-out block survived');
+  assert.ok(result.includes('label = "Repo on GitHub"'), 'edit applied');
+  assert.ok(!result.includes('label = "Open repo on GitHub"'), 'old label gone');
+  // The untouched block keeps its original text exactly.
+  assert.ok(result.includes('id = "vscode"\nlabel = "Open in VS Code"'));
+  assert.deepEqual(commandsOf(result).map((c) => c.label), ['Open in VS Code', 'Repo on GitHub']);
+});
+
+test('an unchanged block keeps hand-formatting the renderer would not produce', () => {
+  const odd = [
+    'editor = ["code"]',
+    '',
+    '[[commands]]',
+    'label   =   "Spaced Out"   # why not',
+    'type = "shell"',
+    'command = "ls"',
+    '',
+  ].join('\n');
+  const result = applyCommands(odd, commandsOf(odd));
+  assert.ok(result.includes('label   =   "Spaced Out"   # why not'));
+});
+
+test('deleting a command removes only its block', () => {
+  const next = commandsOf(HAND_WRITTEN).filter((command) => command.id !== 'vscode');
+  const result = applyCommands(HAND_WRITTEN, next);
+  assert.ok(!result.includes('id = "vscode"'));
+  assert.ok(result.includes('id = "browse"'));
+  assert.ok(result.includes('# 자주 쓰는 것들'), 'comment above the deleted block survived');
+  assert.ok(result.includes('# [[commands]]'));
+  assert.deepEqual(commandsOf(result).map((c) => c.id), ['browse']);
+});
+
+test('deleting every command keeps the preamble and the comments', () => {
+  const result = applyCommands(HAND_WRITTEN, []);
+  assert.ok(result.includes('editor = ["code"]'));
+  assert.ok(result.includes('# 자주 쓰는 것들'));
+  assert.ok(result.includes('# [[commands]]'));
+  assert.deepEqual(commandsOf(result), []);
+});
+
+test('adding a command appends it and changes nothing before it', () => {
+  const before = commandsOf(HAND_WRITTEN);
+  const added = normalizeConfig({
+    commands: [...before, { label: 'Lazygit', type: 'shell', command: 'lazygit' }],
+  }).commands;
+  const result = applyCommands(HAND_WRITTEN, added);
+  assert.ok(result.startsWith(HAND_WRITTEN), 'the entire original document is preserved verbatim');
+  assert.ok(result.includes('label = "Lazygit"'));
+  assert.deepEqual(commandsOf(result).map((c) => c.label), [
+    'Open in VS Code', 'Open repo on GitHub', 'Lazygit',
+  ]);
+  assert.ok(result.includes('# 잠시 끔'), 'the trailing comment is still there');
+});
+
+test('adding to a file with no blocks at all still parses', () => {
+  const bare = 'schema_version = 1\neditor = ["code"]\n';
+  const added = normalizeConfig({ commands: [{ label: 'Ls', type: 'shell', command: 'ls' }] }).commands;
+  const result = applyCommands(bare, added);
+  assert.ok(result.startsWith(bare));
+  assert.deepEqual(commandsOf(result).map((c) => c.label), ['Ls']);
+});
+
+test('reordering emits the blocks in the new order', () => {
+  const [first, second] = commandsOf(HAND_WRITTEN);
+  const result = applyCommands(HAND_WRITTEN, [second, first]);
+  assert.deepEqual(commandsOf(result).map((c) => c.id), ['browse', 'vscode']);
+  assert.ok(result.includes('# [[commands]]'));
+});
+
+test('every applyCommands result re-parses to exactly the requested commands', () => {
+  const base = commandsOf(HAND_WRITTEN);
+  const cases = [
+    base,
+    [],
+    base.slice(0, 1),
+    withField(base, 'vscode', 'command', 'code -n .'),
+    withField(base, 'browse', 'description', '설명 "인용" 포함'),
+    normalizeConfig({ commands: [...base, { label: '새 커맨드', type: 'plugin_action', command: 'ray.file-explorer.open' }] }).commands,
+  ];
+  for (const commands of cases) {
+    const result = applyCommands(HAND_WRITTEN, commands);
+    assert.deepEqual(commandsOf(result), commands, JSON.stringify(commands.map((c) => c.id)));
+  }
+});
+
+test('a hand-written block with no id keeps its formatting when untouched', () => {
+  // Regression: matching on the raw `id` key meant any block a human wrote
+  // (they do not write ids) was treated as new and silently reformatted.
+  const noId = [
+    'editor = ["code"]',
+    '',
+    '[[commands]]',
+    'label   =   "Ls"      # aligned by hand',
+    'type = "shell"',
+    'command = "ls"',
+    '',
+    '[[commands]]',
+    'label = "Browse"',
+    'type = "shell"',
+    'command = "gh browse"',
+    '',
+  ].join('\n');
+  const commands = commandsOf(noId);
+  // Edit only the second command; the first must come out byte-identical.
+  const result = applyCommands(noId, withField(commands, 'browse', 'command', 'gh browse --branch main'));
+  assert.ok(result.includes('label   =   "Ls"      # aligned by hand'));
+  assert.ok(result.includes('command = "gh browse --branch main"'));
+  assert.deepEqual(commandsOf(result).map((c) => c.command), ['ls', 'gh browse --branch main']);
+});
+
+test('a block the user wrote without an id is still matched and editable', () => {
+  const noId = [
+    'editor = ["code"]',
+    '',
+    '[[commands]]',
+    'label = "Ls"',
+    'type = "shell"',
+    'command = "ls"',
+    '',
+  ].join('\n');
+  const commands = commandsOf(noId);
+  assert.equal(commands[0].id, 'ls');
+  const result = applyCommands(noId, withField(commands, 'ls', 'command', 'ls -la'));
+  assert.deepEqual(commandsOf(result).map((c) => c.command), ['ls -la']);
+});
+```
+
+- [ ] **Step 2: Run it to confirm it fails**
+
+Run: `node --test test/toml-edit.test.mjs`
+Expected: FAIL — `Cannot find module '.../src/toml-edit.mjs'`.
+
+- [ ] **Step 3: Write `src/toml-edit.mjs`**
+
+```js
+import { normalizeConfig } from './schema.mjs';
+import { parseConfigToml, renderCommandBlock } from './toml-config.mjs';
+
+// Only a bare, unindented header starts a block. `# [[commands]]` and any
+// indented variant stay in opaque text, which is what lets a user comment a
+// command out and have it survive every popup save.
+const HEADER = /^\[\[commands\]\][ \t]*$/;
+const COMPARED_KEYS = Object.freeze(['id', 'label', 'type', 'command', 'cwd', 'description']);
+
+function isBlankOrComment(line) {
+  const trimmed = line.trim();
+  return trimmed.length === 0 || trimmed.startsWith('#');
+}
+
+// Trailing blank/comment lines belong to whatever comes next, not to the block
+// above them — otherwise deleting the last command would take the user's
+// commented-out block with it.
+function peelTrailer(lines) {
+  let end = lines.length;
+  while (end > 1 && isBlankOrComment(lines[end - 1])) end -= 1;
+  return { body: lines.slice(0, end), trailer: lines.slice(end) };
+}
+
+export function splitDocument(text) {
+  const lines = String(text).split('\n');
+  const segments = [];
+  let pending = [];
+  let block = null;
+  const flushPending = () => {
+    if (pending.length === 0) return;
+    segments.push({ kind: 'opaque', text: pending.join('\n') });
+    pending = [];
+  };
+  const flushBlock = () => {
+    if (block === null) return;
+    const { body, trailer } = peelTrailer(block);
+    segments.push({ kind: 'command', text: body.join('\n') });
+    block = null;
+    pending = trailer;
+  };
+  for (const line of lines) {
+    if (HEADER.test(line)) {
+      flushBlock();
+      flushPending();
+      block = [line];
+      continue;
+    }
+    if (block === null) pending.push(line);
+    else block.push(line);
+  }
+  flushBlock();
+  flushPending();
+  return segments;
+}
+
+export function joinDocument(segments) {
+  return segments.map((segment) => segment.text).join('\n');
+}
+
+function sameCommand(left, right) {
+  if (!left || !right) return false;
+  return COMPARED_KEYS.every((key) => left[key] === right[key]);
+}
+
+export function applyCommands(text, commands) {
+  const segments = splitDocument(text);
+  const slots = segments.filter((segment) => segment.kind === 'command');
+
+  // Normalize the whole original document once, so each block's identity is
+  // derived exactly the way the loader derived it, and slot N corresponds to
+  // previous[N]. Reading the raw `id` key out of each block instead would fail
+  // for every hand-written block that omits it — which is most of them — and
+  // would silently reformat the user's file on the next save.
+  let previous = [];
+  try {
+    previous = normalizeConfig(parseConfigToml(text)).commands;
+  } catch {
+    previous = [];
+  }
+
+  // Reuse the block a command already occupied so an untouched command keeps its
+  // original text, and an edited one is rewritten in place.
+  const claimed = new Set();
+  const rendered = commands.map((command) => {
+    const position = previous.findIndex((entry, index) => (
+      !claimed.has(index) && index < slots.length && entry.id === command.id
+    ));
+    if (position < 0) return renderCommandBlock(command).replace(/\n$/u, '');
+    claimed.add(position);
+    return sameCommand(previous[position], command)
+      ? slots[position].text
+      : renderCommandBlock(command).replace(/\n$/u, '');
+  });
+
+  // Walk the original document, feeding the new blocks into the slots the old
+  // ones occupied. Opaque segments are copied untouched, in place.
+  const output = [];
+  let next = 0;
+  for (const segment of segments) {
+    if (segment.kind === 'opaque') {
+      output.push(segment);
+      continue;
+    }
+    if (next < rendered.length) {
+      output.push({ kind: 'command', text: rendered[next] });
+      next += 1;
+    }
+    // Otherwise this slot's command was deleted: emit nothing.
+  }
+  // Anything left over is new; append it after a blank line. Segments join with
+  // "\n", so an empty opaque segment is exactly one blank line — and when the
+  // document already ends in one, no separator is needed.
+  while (next < rendered.length) {
+    if (output.length > 0 && !joinDocument(output).endsWith('\n')) {
+      output.push({ kind: 'opaque', text: '' });
+    }
+    output.push({ kind: 'command', text: rendered[next] });
+    next += 1;
+  }
+  const joined = joinDocument(output);
+  return joined.endsWith('\n') ? joined : `${joined}\n`;
+}
+```
+
+- [ ] **Step 4: Run the writer tests**
+
+Run: `node --test test/toml-edit.test.mjs`
+Expected: PASS — 14 tests.
+
+If any test fails, fix `src/toml-edit.mjs` — not the test. These tests encode the
+promise made to the user about their comments; a failure here means the writer is
+wrong, and this is the one module in the plugin where a bug damages a file the
+user wrote by hand.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/toml-edit.mjs test/toml-edit.test.mjs
+git commit -m "feat: edit commands.toml a block at a time so comments survive
+
+Re-rendering the whole file on save would drop every comment, which would make
+TOML strictly worse than the JSON it replaces: it would invite annotations and
+then eat them. So the writer splits the document into [[commands]] blocks and
+opaque text, and only ever replaces, removes, or appends a block. Preamble,
+blank lines, comments between blocks, and commented-out blocks come out
+byte-identical and in place.
+
+A command whose fields all match its existing block keeps that block's original
+text, so hand-formatting survives an edit to some other command. Only a block
+the popup actually rewrites loses the comments inside it.
+
+Two invariants are tested directly: the splitter round-trips any document
+byte-for-byte, and every applyCommands result re-parses to exactly the requested
+command list."
+```
+
+---
+
+## Task 15: Read and write commands.toml, and migrate the old JSON
+
+**Files:**
+- Modify: `src/paths.mjs` (add `legacyCommandsPath`), `src/store.mjs` (TOML + migration), `src/schema.mjs` (drop the JSON serializer), `bin/popup.mjs` and `src/render.mjs` (error copy)
+- Test: `test/store.test.mjs` (rewritten for TOML), `test/paths.test.mjs` (one added case), `test/schema.test.mjs` (drop the `serializeConfig` case), `test/render.test.mjs` and `test/popup.test.mjs` (copy that names the file)
+
+**Interfaces:**
+- Consumes: `src/toml-config.mjs` (`parseConfigToml`, `renderConfigToml`), `src/toml-edit.mjs` (`applyCommands`).
+- Produces:
+  - `legacyCommandsPath(configDir: string): string`
+  - `loadStore`, `saveStore`, `ensureStore` keep their exact signatures from Task 4. Only the on-disk format changes.
+
+Behaviour changes, precisely:
+- `loadStore` reads `commands.toml` and parses TOML. `raw` is still the file text.
+- `saveStore(file, doc, { expectedRaw })` — when `expectedRaw` is a string **and** the parsed `editor` still matches `doc.editor`, it produces the new text with `applyCommands(expectedRaw, doc.commands)`, so comments survive. Otherwise it falls back to `renderConfigToml(doc)`.
+- `ensureStore` — if `commands.toml` is absent but `commands.json` exists, it converts the JSON, writes the TOML, then renames the JSON to `commands.json.bak`. Nothing is deleted.
+- `serializeConfig` is removed from `src/schema.mjs`; `renderConfigToml` replaces it. Keeping a JSON serializer around would invite writing the wrong format.
+
+- [ ] **Step 1: Add `legacyCommandsPath` to `src/paths.mjs`**
+
+Add the import and the export (leave everything else untouched):
+
+```js
+import { CONFIG_FILE_NAME, LEGACY_CONFIG_FILE_NAME, MAX_PATH_BYTES, PLUGIN_ID, RUN_LOG_FILE_NAME } from './plugin.mjs';
+```
+
+```js
+export function legacyCommandsPath(configDir) {
+  return join(configDir, LEGACY_CONFIG_FILE_NAME);
+}
+```
+
+- [ ] **Step 2: Add the path test**
+
+Append to `test/paths.test.mjs`:
+
+```js
+test('legacyCommandsPath points at the pre-TOML file name', () => {
+  assert.equal(legacyCommandsPath('/tmp/cfg'), join('/tmp/cfg', 'commands.json'));
+  assert.equal(commandsPath('/tmp/cfg'), join('/tmp/cfg', 'commands.toml'));
+});
+```
+
+and extend that file's import to include `legacyCommandsPath`.
+
+Run: `node --test test/paths.test.mjs`
+Expected: FAIL — `legacyCommandsPath is not a function` (before Step 1) or PASS (after).
+
+- [ ] **Step 3: Drop the JSON serializer from `src/schema.mjs`**
+
+Delete this function entirely:
+
+```js
+export function serializeConfig(doc) {
+  return `${JSON.stringify(doc, null, 2)}\n`;
+}
+```
+
+and delete the `serializeConfig` test from `test/schema.test.mjs` (the one named
+`serializeConfig writes stable indented JSON with a trailing newline`) plus its
+name from that file's import list. The round-trip guarantee it provided now lives
+in `test/toml-config.test.mjs`.
+
+- [ ] **Step 4: Replace `test/store.test.mjs`**
+
+```js
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import { ConfigError, defaultConfig, normalizeConfig } from '../src/schema.mjs';
+import { parseConfigToml, renderConfigToml } from '../src/toml-config.mjs';
+import { ensureStore, loadStore, saveStore } from '../src/store.mjs';
+
+async function scratch() {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-store-'));
+  return { dir, file: join(dir, 'commands.toml'), legacy: join(dir, 'commands.json') };
+}
+
+test('loadStore returns the seeded default when the file is absent', async () => {
+  const { file } = await scratch();
+  const loaded = await loadStore(file);
+  assert.deepEqual(loaded.doc, defaultConfig());
+  assert.equal(loaded.raw, null);
+});
+
+test('loadStore reads and normalizes an existing TOML file', async () => {
+  const { file } = await scratch();
+  await writeFile(file, [
+    'editor = ["code"]',
+    '',
+    '# 자주 쓰는 것',
+    '[[commands]]',
+    'label = "Ls"',
+    'type = "shell"',
+    'command = "ls"',
+    '',
+  ].join('\n'), 'utf8');
+  const loaded = await loadStore(file);
+  assert.equal(loaded.doc.commands.length, 1);
+  assert.equal(loaded.doc.commands[0].id, 'ls');
+  assert.equal(loaded.doc.commands[0].cwd, 'focused');
+  assert.deepEqual(loaded.doc.editor, ['code']);
+  assert.ok(loaded.raw.includes('# 자주 쓰는 것'));
+});
+
+test('loadStore reports malformed TOML as a ConfigError naming the file', async () => {
+  const { file } = await scratch();
+  await writeFile(file, '[[commands]]\nlabel = ', 'utf8');
+  await assert.rejects(loadStore(file), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /commands\.toml/u);
+    assert.match(error.message, /not valid TOML/u);
+    return true;
+  });
+});
+
+test('loadStore surfaces schema failures with the file name', async () => {
+  const { file } = await scratch();
+  await writeFile(file, '[[commands]]\nlabel = "a"\ntype = "nope"\ncommand = "b"\n', 'utf8');
+  await assert.rejects(loadStore(file), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /commands\.toml/u);
+    assert.match(error.message, /commands\[0\]/u);
+    return true;
+  });
+});
+
+test('ensureStore writes the seed file exactly once', async () => {
+  const { file } = await scratch();
+  const first = await ensureStore(file);
+  assert.deepEqual(first.doc, defaultConfig());
+  assert.equal(await readFile(file, 'utf8'), renderConfigToml(defaultConfig()));
+
+  await writeFile(file, 'editor = ["code"]\n', 'utf8');
+  const second = await ensureStore(file);
+  assert.deepEqual(second.doc.commands, []);
+});
+
+test('ensureStore migrates a pre-TOML commands.json and keeps a backup', async () => {
+  const { dir, file, legacy } = await scratch();
+  await writeFile(legacy, JSON.stringify({
+    schema_version: 1,
+    editor: ['code', '-g'],
+    commands: [{ id: 'ls', label: 'Ls', type: 'shell', command: 'ls', cwd: 'workspace', description: 'list' }],
+  }), 'utf8');
+
+  const migrated = await ensureStore(file);
+  assert.deepEqual(migrated.doc.editor, ['code', '-g']);
+  assert.deepEqual(migrated.doc.commands.map((command) => command.id), ['ls']);
+  assert.equal(migrated.doc.commands[0].cwd, 'workspace');
+
+  const written = await readFile(file, 'utf8');
+  assert.ok(written.includes('[[commands]]'));
+  assert.deepEqual(normalizeConfig(parseConfigToml(written)), migrated.doc);
+
+  const entries = (await readdir(dir)).sort();
+  assert.deepEqual(entries, ['commands.json.bak', 'commands.toml']);
+});
+
+test('ensureStore does not migrate when a TOML file already exists', async () => {
+  const { file, legacy } = await scratch();
+  await writeFile(file, 'editor = ["code"]\n', 'utf8');
+  await writeFile(legacy, JSON.stringify({ commands: [{ label: 'Old', type: 'shell', command: 'old' }] }), 'utf8');
+  const loaded = await ensureStore(file);
+  assert.deepEqual(loaded.doc.commands, []);
+  assert.equal(await readFile(legacy, 'utf8').then((t) => t.includes('Old')), true);
+});
+
+test('ensureStore falls back to the seed when the legacy file is unusable', async () => {
+  const { file, legacy } = await scratch();
+  await writeFile(legacy, '{ broken', 'utf8');
+  const loaded = await ensureStore(file);
+  assert.deepEqual(loaded.doc, defaultConfig());
+  assert.ok((await readFile(file, 'utf8')).includes('[[commands]]'));
+});
+
+test('saveStore writes atomically and leaves no temp files behind', async () => {
+  const { dir, file } = await scratch();
+  const doc = normalizeConfig({ commands: [] });
+  const saved = await saveStore(file, doc);
+  assert.equal(saved.raw, renderConfigToml(doc));
+  assert.deepEqual(await readdir(dir), ['commands.toml']);
+});
+
+test('saveStore preserves comments and untouched blocks when given the loaded text', async () => {
+  const { file } = await scratch();
+  const original = [
+    'schema_version = 1',
+    'editor = ["code"]',
+    '',
+    '# 자주 쓰는 것들',
+    '[[commands]]',
+    'id = "ls"',
+    'label = "Ls"',
+    'type = "shell"',
+    'command = "ls"',
+    '',
+    '# 잠시 끔',
+    '# [[commands]]',
+    '# label = "Lazygit"',
+    '',
+  ].join('\n');
+  await writeFile(file, original, 'utf8');
+  const loaded = await loadStore(file);
+  const next = {
+    ...loaded.doc,
+    commands: loaded.doc.commands.map((command) => ({ ...command, command: 'ls -la' })),
+  };
+  const saved = await saveStore(file, next, { expectedRaw: loaded.raw });
+  const text = await readFile(file, 'utf8');
+  assert.equal(text, saved.raw);
+  assert.ok(text.includes('# 자주 쓰는 것들'), 'comment above the block survived');
+  assert.ok(text.includes('# 잠시 끔'), 'trailing comment survived');
+  assert.ok(text.includes('# [[commands]]'), 'commented-out block survived');
+  assert.ok(text.includes('command = "ls -la"'), 'the edit landed');
+  assert.deepEqual(normalizeConfig(parseConfigToml(text)).commands, next.commands);
+});
+
+test('saveStore full-renders when there is no prior text to splice into', async () => {
+  const { file } = await scratch();
+  const doc = normalizeConfig({ commands: [{ label: 'Ls', type: 'shell', command: 'ls' }] });
+  const saved = await saveStore(file, doc, { expectedRaw: null });
+  assert.equal(saved.raw, renderConfigToml(doc));
+});
+
+test('saveStore full-renders when the editor key changes', async () => {
+  const { file } = await scratch();
+  await writeFile(file, 'editor = ["code"]\n\n# a comment\n', 'utf8');
+  const loaded = await loadStore(file);
+  const next = { ...loaded.doc, editor: ['vim'] };
+  const saved = await saveStore(file, next, { expectedRaw: loaded.raw });
+  assert.equal(saved.raw, renderConfigToml(next));
+  assert.ok(!saved.raw.includes('# a comment'), 'a full re-render cannot keep comments');
+});
+
+test('saveStore normalizes before writing', async () => {
+  const { file } = await scratch();
+  await saveStore(file, { commands: [{ label: '  Ls  ', type: 'shell', command: 'ls' }] });
+  const written = normalizeConfig(parseConfigToml(await readFile(file, 'utf8')));
+  assert.equal(written.commands[0].label, 'Ls');
+  assert.equal(written.schema_version, 1);
+});
+
+test('saveStore refuses to clobber an external edit', async () => {
+  const { file } = await scratch();
+  const first = await saveStore(file, normalizeConfig({ commands: [] }));
+  await writeFile(file, `${first.raw}\n# added behind our back\n`, 'utf8');
+  await assert.rejects(
+    saveStore(file, normalizeConfig({ commands: [{ label: 'New', type: 'shell', command: 'ls' }] }), { expectedRaw: first.raw }),
+    (error) => error instanceof ConfigError && /changed on disk/u.test(error.message),
+  );
+});
+
+test('saveStore rejects an invalid document without touching the file', async () => {
+  const { file } = await scratch();
+  const good = await saveStore(file, normalizeConfig({ commands: [] }));
+  await assert.rejects(
+    saveStore(file, { commands: [{ label: 'a', type: 'nope', command: 'b' }] }, { expectedRaw: good.raw }),
+    ConfigError,
+  );
+  assert.equal(await readFile(file, 'utf8'), good.raw);
+});
+```
+
+- [ ] **Step 5: Run it to confirm it fails**
+
+Run: `node --test test/store.test.mjs`
+Expected: FAIL — `src/store.mjs` still imports `serializeConfig` (now deleted) and writes JSON.
+
+- [ ] **Step 6: Rewrite `src/store.mjs`**
+
+```js
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
+
+import { LEGACY_CONFIG_FILE_NAME } from './plugin.mjs';
+import { ConfigError, defaultConfig, normalizeConfig } from './schema.mjs';
+import { parseConfigToml, renderConfigToml } from './toml-config.mjs';
+import { applyCommands } from './toml-edit.mjs';
+
+async function readRaw(file) {
+  try {
+    return await readFile(file, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw new ConfigError(`${basename(file)} could not be read (${error?.code ?? 'unknown error'})`);
+  }
+}
+
+function normalizeNamed(parsed, file) {
+  try {
+    return normalizeConfig(parsed);
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    throw new ConfigError(`${basename(file)}: ${error.message}`);
+  }
+}
+
+export async function loadStore(file) {
+  const raw = await readRaw(file);
+  if (raw === null) return { doc: defaultConfig(), raw: null };
+  return { doc: normalizeNamed(parseConfigToml(raw, basename(file)), file), raw };
+}
+
+async function writeAtomic(file, raw) {
+  const directory = dirname(file);
+  await mkdir(directory, { recursive: true });
+  // Write-then-rename so a crash mid-write can never leave a half-written config
+  // that the next popup would refuse to load.
+  const temporary = join(directory, `.${basename(file)}.${process.pid}.tmp`);
+  await writeFile(temporary, raw, { encoding: 'utf8', mode: 0o600 });
+  await rename(temporary, file);
+}
+
+export async function saveStore(file, doc, { expectedRaw = null } = {}) {
+  const normalized = normalizeConfig(doc);
+  if (typeof expectedRaw === 'string') {
+    const current = await readRaw(file);
+    if (current !== null && current !== expectedRaw) {
+      throw new ConfigError(
+        `${basename(file)} changed on disk since it was loaded; reopen Command Center to pick up the new file`,
+      );
+    }
+  }
+  // Splice individual [[commands]] blocks into the text we loaded so the user's
+  // comments, ordering and spacing survive. Only fall back to a whole-file
+  // render when there is no prior text, or when something outside the command
+  // blocks changed and a splice could not express it.
+  let raw;
+  if (typeof expectedRaw === 'string') {
+    let previousEditor = null;
+    try {
+      previousEditor = normalizeConfig(parseConfigToml(expectedRaw, basename(file))).editor;
+    } catch {
+      previousEditor = null;
+    }
+    const editorUnchanged = Array.isArray(previousEditor)
+      && previousEditor.length === normalized.editor.length
+      && previousEditor.every((entry, index) => entry === normalized.editor[index]);
+    raw = editorUnchanged
+      ? applyCommands(expectedRaw, normalized.commands)
+      : renderConfigToml(normalized);
+  } else {
+    raw = renderConfigToml(normalized);
+  }
+  await writeAtomic(file, raw);
+  return { raw };
+}
+
+// Tasks 1-12 shipped commands.json. Convert it once, and rename rather than
+// delete it: this is a file the user may have hand-written.
+async function migrateLegacy(file) {
+  const legacy = join(dirname(file), LEGACY_CONFIG_FILE_NAME);
+  const raw = await readRaw(legacy).catch(() => null);
+  if (raw === null) return null;
+  let doc;
+  try {
+    doc = normalizeConfig(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+  await writeAtomic(file, renderConfigToml(doc));
+  await rename(legacy, `${legacy}.bak`).catch(() => {});
+  return doc;
+}
+
+export async function ensureStore(file) {
+  const loaded = await loadStore(file);
+  if (loaded.raw !== null) return { doc: loaded.doc, raw: loaded.raw };
+  const migrated = await migrateLegacy(file);
+  if (migrated) {
+    const raw = await readRaw(file);
+    return { doc: migrated, raw: raw ?? renderConfigToml(migrated) };
+  }
+  const saved = await saveStore(file, loaded.doc);
+  return { doc: loaded.doc, raw: saved.raw };
+}
+```
+
+- [ ] **Step 7: Run the store tests**
+
+Run: `node --test test/store.test.mjs`
+Expected: PASS — 15 tests.
+
+- [ ] **Step 8: Update the copy that names the file**
+
+Three places still say `commands.json`. Change each to `commands.toml`:
+
+In `src/render.mjs`, the empty-list line:
+
+```js
+    lines.push(...wrap('Press a to add one, or o to open commands.toml in your editor.', width));
+```
+
+and the error-mode fallback:
+
+```js
+    ...wrap(view.error ?? 'commands.toml could not be loaded', width),
+```
+
+In `src/schema.mjs`, the top-level shape message:
+
+```js
+    throw new ConfigError('commands.toml must contain a TOML table');
+```
+
+In `bin/popup.mjs`, the non-ConfigError diagnostic:
+
+```js
+      diagnostic(stderr, 'commands.toml could not be opened');
+```
+
+Then update the assertions that pinned the old copy. Do the mechanical part with
+this script rather than by hand, so nothing is missed or half-renamed:
+
+```bash
+python3 - <<'RENAME'
+import pathlib
+for name in ('test/render.test.mjs', 'test/popup.test.mjs'):
+    p = pathlib.Path(name)
+    s = p.read_text(encoding='utf8')
+    s = s.replace('commands.json', 'commands.toml')
+    p.write_text(s, encoding='utf8')
+    print('renamed in', name)
+RENAME
+```
+
+That also fixes the escaped regex forms, since `commands\.json` contains the
+literal substring `commands.json` only after the backslash — verify with
+`grep -rn 'commands\.json' test/` afterwards, which must print nothing.
+
+Then three edits in `test/popup.test.mjs` that a rename cannot do:
+
+1. Both malformed-config fixtures must become malformed *TOML*. Replace each
+   `await writeFile(file, '{ broken', 'utf8');`
+   with
+   `await writeFile(file, '[[commands]]\nlabel = ', 'utf8');`
+   and in the test asserting the file was not overwritten, change that test's
+   expected value from `'{ broken'` to `'[[commands]]\nlabel = '`.
+2. The seeded-file test compares against a rendered file. Change
+   `serializeConfig(defaultConfig())` to `renderConfigToml(defaultConfig())`.
+3. The custom-editor test builds a config file. Change
+   `serializeConfig({ schema_version: 1, editor: ['code', '--new-window'], commands: [] })`
+   to
+   `renderConfigToml(normalizeConfig({ editor: ['code', '--new-window'], commands: [] }))`.
+
+Then fix that file's imports: drop `serializeConfig` from the `../src/schema.mjs`
+import, add `normalizeConfig` to it, and add
+`import { renderConfigToml } from '../src/toml-config.mjs';`.
+
+`test/schema.test.mjs` needs no copy change — the shape-rejection test asserts
+nothing about that message. Confirm by running it.
+- [ ] **Step 9: Run the whole suite**
+
+Run: `npm test`
+Expected: PASS — 0 fail. The total moves from 199 to **231**: `serializeConfig`'s test is gone (−1), `test/store.test.mjs` grows from 10 to 15 (+5), `test/paths.test.mjs` grows from 7 to 8 (+1), and the two new files add 13 + 14 (+27). If your count differs, do not adjust a test to reach it — report the discrepancy with the failing or unexpected test names.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add src/paths.mjs src/store.mjs src/schema.mjs src/render.mjs bin/popup.mjs test/paths.test.mjs test/store.test.mjs test/schema.test.mjs test/render.test.mjs test/popup.test.mjs
+git commit -m "feat: store the command list in commands.toml
+
+The popup now reads TOML and, on save, splices only the [[commands]] blocks it
+changed back into the text it loaded — so a comment, a hand-formatted block, or a
+commented-out command survives an edit made through the popup. A whole-file
+render is kept for two cases only: seeding a new file, and a change to the editor
+key that a block splice cannot express.
+
+A commands.json left by an earlier version is converted once on first open and
+renamed to commands.json.bak rather than deleted, because the user may have
+hand-written it.
+
+serializeConfig is deleted rather than left unused: keeping a JSON serializer in
+the module that owns the config shape would invite writing the wrong format."
+```
+
+---
+
+## Task 16: Documentation and re-verification
+
+**Files:**
+- Modify: `README.md`, `README.ko.md`, `test/manifest.test.mjs`
+- Test: `test/manifest.test.mjs`
+
+- [ ] **Step 1: Update both READMEs**
+
+In **both** files, make these changes:
+
+1. Every `commands.json` becomes `commands.toml`, including in the troubleshooting and actions sections.
+2. Replace the JSON config example with the TOML equivalent:
+
+```toml
+schema_version = 1
+editor = ["code"]
+
+# the ones I actually use
+[[commands]]
+id = "open-in-vs-code"
+label = "Open in VS Code"
+type = "shell"
+command = "code ."
+cwd = "focused"
+description = "Open the focused pane's directory in VS Code"
+
+[[commands]]
+label = "File explorer"
+type = "plugin_action"
+command = "ray.file-explorer.open"
+
+# [[commands]]                 <- commented out for now
+# label = "Lazygit"
+# type = "shell"
+# command = "lazygit"
+```
+
+3. Replace the paragraph that begins "The file is only ever written atomically" with this (English):
+
+> The file is only ever written atomically, and the popup refuses to save if the
+> file changed on disk since it was opened — so editing it in VS Code while the
+> popup is open cannot lose your edits.
+>
+> **Your comments survive.** The popup does not re-render the file; it replaces,
+> removes, or appends individual `[[commands]]` blocks. Your header, blank lines,
+> comments between blocks, and commented-out blocks are left byte-for-byte alone,
+> and a command you did not touch keeps its original formatting. The one
+> exception: comments *inside* a block you edit through the popup are lost,
+> because that block is rewritten.
+>
+> A malformed file opens the popup in an error mode that names the problem and
+> still lets you press `o` to go fix it; it is never overwritten.
+
+and the Korean equivalent:
+
+> 파일은 항상 원자적으로 기록되고, 팝업을 연 뒤 파일이 디스크에서 바뀌었다면 저장을
+> 거부합니다. 팝업을 열어둔 채 VS Code에서 편집해도 그 편집이 사라지지 않습니다.
+>
+> **주석은 유지됩니다.** 팝업은 파일을 다시 렌더링하지 않고 `[[commands]]` 블록만
+> 교체·삭제·추가합니다. 헤더, 빈 줄, 블록 사이 주석, 주석 처리해 둔 블록은 바이트
+> 단위로 그대로 남고, 건드리지 않은 커맨드는 원래 서식을 유지합니다. 예외는 하나:
+> 팝업에서 수정한 블록 *안쪽*의 주석은 그 블록이 다시 쓰이므로 사라집니다.
+>
+> 형식이 깨진 파일은 무엇이 문제인지 알려주는 에러 화면으로 열리고, 그 화면에서도
+> `o`로 고치러 갈 수 있습니다. 깨진 파일을 덮어쓰지는 않습니다.
+
+4. In the field table, change the `id` row to note that omitting it is fine and add a `schema_version` row. English:
+
+| `schema_version` | Always `1`. |
+
+Korean:
+
+| `schema_version` | 항상 `1`. |
+
+5. Add a migration note directly under the config-file heading. English:
+
+> Upgrading from a version that used `commands.json`? The first time you open the
+> popup it converts your file to `commands.toml` and renames the original to
+> `commands.json.bak`. Nothing is deleted.
+
+Korean:
+
+> `commands.json`을 쓰던 버전에서 올라오셨다면, 팝업을 처음 열 때 `commands.toml`로
+> 변환하고 원본은 `commands.json.bak`으로 이름만 바꿔 둡니다. 삭제하지 않습니다.
+
+6. In the Installation section of both, note the dependency. English: "Requires Node.js 22+ and herdr 0.7.5+. `herdr plugin install` runs `npm ci` for you." Korean: "Node.js 22+ 와 herdr 0.7.5+ 가 필요합니다. `herdr plugin install` 이 `npm ci` 를 대신 실행합니다."
+
+- [ ] **Step 2: Update the manifest tests**
+
+In `test/manifest.test.mjs`, change the existing `CONFIG_FILE_NAME` assertion:
+
+```js
+  assert.equal(CONFIG_FILE_NAME, 'commands.toml');
+```
+
+Change the build-pipeline test to require the `npm ci` gate and to require it before `npm test`:
+
+```js
+test('manifest build pipeline checks Node, installs deps, then runs the tests', async () => {
+  const text = await readFile(manifestUrl, 'utf8');
+  assert.match(text, /Node\.js >= 22 required/);
+  assert.match(text, /command = \["npm", "ci"\]/);
+  assert.match(text, /command = \["npm", "test"\]/);
+  assert.ok(
+    text.indexOf('["npm", "ci"]') < text.indexOf('["npm", "test"]'),
+    'npm ci must run before npm test or a fresh install has no dependencies',
+  );
+});
+```
+
+Change the config-field doc test to cover the TOML shape and the migration note:
+
+```js
+test('both READMEs document every config field and the migration', async () => {
+  for (const name of ['README.md', 'README.ko.md']) {
+    const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
+    for (const field of ['schema_version', 'editor', 'label', 'plugin_action', 'focused', 'workspace', 'description']) {
+      assert.ok(text.includes(field), `${name} does not document ${field}`);
+    }
+    assert.ok(text.includes('[[commands]]'), `${name} does not show the TOML block shape`);
+    assert.ok(text.includes('commands.json.bak'), `${name} does not explain the migration`);
+    assert.ok(!/commands\.json[^.]/u.test(text.replace(/commands\.json\.bak/gu, '')),
+      `${name} still refers to commands.json outside the migration note`);
+  }
+});
+```
+
+- [ ] **Step 3: Run the whole suite**
+
+Run: `npm test`
+Expected: PASS — 231 tests, 0 fail.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add README.md README.ko.md test/manifest.test.mjs
+git commit -m "docs: document the TOML config and what survives a popup save
+
+The comment-preservation contract is the reason this file is TOML at all, so both
+READMEs now state it precisely, including the one exception (comments inside a
+block the popup rewrites). The example config shows a commented-out command,
+since that is the workflow JSON could not support.
+
+Manifest tests now require the npm ci build step to come before npm test — a
+fresh 'herdr plugin install' would otherwise run the suite with no smol-toml —
+and assert that neither README still points at commands.json outside the
+migration note."
+```
+
+- [ ] **Step 5: Relink and re-verify against the live herdr**
+
+```bash
+herdr plugin link /Users/cdragon/Desktop/Programming/side/herdr-command-center
+herdr plugin list | grep -A1 command-center
+```
+
+Expected: the link succeeds, which means `npm ci` and `npm test` both passed as build gates.
+
+- [ ] **Step 6: Verify the migration on the real config directory**
+
+The live config dir already holds a `commands.json` from the previous version.
+
+```bash
+CFG=$(herdr plugin config-dir cdragon.command-center)
+ls -1 "$CFG"
+node -e "import('./src/store.mjs').then(async ({ensureStore}) => {
+  const r = await ensureStore(process.argv[1]);
+  console.log('commands:', r.doc.commands.map((c) => c.id).join(', '));
+});" "$CFG/commands.toml"
+ls -1 "$CFG"
+cat "$CFG/commands.toml"
+```
+
+Expected: before, `commands.json`; after, both `commands.toml` and
+`commands.json.bak`, with the three commands intact and rendered as
+`[[commands]]` blocks.
+
+- [ ] **Step 7: Prove comment preservation on the real file**
+
+```bash
+CFG=$(herdr plugin config-dir cdragon.command-center)
+python3 - "$CFG/commands.toml" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+text = p.read_text(encoding='utf8')
+p.write_text(text.replace('[[commands]]', '# 자주 쓰는 것들\n[[commands]]', 1)
+             + '\n# [[commands]]\n# label = "Lazygit"\n', encoding='utf8')
+print('added a comment and a commented-out block')
+PY
+node -e "
+import('./src/store.mjs').then(async ({loadStore, saveStore}) => {
+  const file = process.argv[1];
+  const loaded = await loadStore(file);
+  const next = { ...loaded.doc, commands: loaded.doc.commands.map((c, i) =>
+    (i === 0 ? { ...c, description: '팝업에서 바꾼 설명' } : c)) };
+  await saveStore(file, next, { expectedRaw: loaded.raw });
+  console.log('saved through the popup path');
+});" "$CFG/commands.toml"
+grep -c "자주 쓰는 것들" "$CFG/commands.toml"
+grep -c "# \[\[commands\]\]" "$CFG/commands.toml"
+grep -c "팝업에서 바꾼 설명" "$CFG/commands.toml"
+```
+
+Expected: all three greps print `1` — the comment survived, the commented-out
+block survived, and the edit landed.
+
+---
