@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { commandsPath, resolveConfigDir, resolveStateDir, runLogPath } from '../src/paths.mjs';
+import { commandsPath, legacyCommandsPath, resolveConfigDir, resolveStateDir, runLogPath } from '../src/paths.mjs';
 
 test('resolveConfigDir prefers the env herdr injects', async () => {
   const dir = await resolveConfigDir({ HERDR_PLUGIN_CONFIG_DIR: '/tmp/cc-config' }, async () => {
@@ -54,6 +54,11 @@ test('resolveStateDir prefers HERDR_PLUGIN_STATE_DIR and falls back beside the c
 });
 
 test('path helpers append the known file names', () => {
-  assert.equal(commandsPath('/tmp/cfg'), join('/tmp/cfg', 'commands.json'));
+  assert.equal(commandsPath('/tmp/cfg'), join('/tmp/cfg', 'commands.toml'));
   assert.equal(runLogPath('/tmp/state'), join('/tmp/state', 'run.log'));
+});
+
+test('legacyCommandsPath points at the pre-TOML file name', () => {
+  assert.equal(legacyCommandsPath('/tmp/cfg'), join('/tmp/cfg', 'commands.json'));
+  assert.equal(commandsPath('/tmp/cfg'), join('/tmp/cfg', 'commands.toml'));
 });

@@ -108,7 +108,7 @@ test('an empty list explains how to add a command', () => {
   const text = renderView(createView({ doc: doc([]) }), SIZE);
   assert.match(text, /Command Center · 0 commands/u);
   assert.match(text, /Press a to add one/u);
-  assert.match(text, /commands\.json/u);
+  assert.match(text, /commands\.toml/u);
 });
 
 test('the form labels every field and marks the focused one', () => {
@@ -156,10 +156,10 @@ test('the delete confirmation names the command', () => {
 });
 
 test('error mode shows the config error and only its own keys', () => {
-  const view = createView({ doc: doc(), error: 'commands.json is not valid JSON' });
+  const view = createView({ doc: doc(), error: 'commands.toml is not valid JSON' });
   const text = renderView(view, SIZE);
   assert.match(text, /Command Center · config error/u);
-  assert.match(text, /commands\.json is not valid JSON/u);
+  assert.match(text, /commands\.toml is not valid JSON/u);
   assert.match(text, /o edit file/u);
   assert.ok(!text.includes('a add'));
 });

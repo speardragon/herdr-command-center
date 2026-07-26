@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { runPopup } from '../bin/popup.mjs';
-import { defaultConfig, serializeConfig } from '../src/schema.mjs';
+import { defaultConfig, normalizeConfig } from '../src/schema.mjs';
+import { parseConfigToml, renderConfigToml } from '../src/toml-config.mjs';
 import {
   createFakeProcess,
   createFakeStderr,
@@ -17,7 +18,7 @@ const CONTEXT = { focusedPaneCwd: '/Users/cdragon/repo', workspaceCwd: '/Users/c
 
 async function scratch() {
   const dir = await mkdtemp(join(tmpdir(), 'cc-popup-'));
-  return { dir, file: join(dir, 'commands.json') };
+  return { dir, file: join(dir, 'commands.toml') };
 }
 
 async function harness(keys, { dir, extraEnv = {}, size } = {}) {
@@ -83,11 +84,11 @@ test('runPopup exits 2 when the config directory cannot be resolved', async () =
   assert.match(stderr.lines.join(''), /config directory/u);
 });
 
-test('runPopup seeds commands.json on first open and draws the list', async () => {
+test('runPopup seeds commands.toml on first open and draws the list', async () => {
   const { dir, file } = await scratch();
   const { code, stdout } = await harness(['\u001b'], { dir });
   assert.equal(code, 0);
-  assert.equal(await readFile(file, 'utf8'), serializeConfig(defaultConfig()));
+  assert.equal(await readFile(file, 'utf8'), renderConfigToml(defaultConfig()));
   assert.match(stdout.lastFrame, /Command Center · 3 commands/u);
   assert.match(stdout.lastFrame, /1\. Open in VS Code/u);
 });
@@ -169,23 +170,22 @@ test('o hands an open-config task to the runner', async () => {
   assert.deepEqual(task.editor, ['code']);
 });
 
-test('o forwards a custom editor from commands.json', async () => {
+test('o forwards a custom editor from commands.toml', async () => {
   const { dir, file } = await scratch();
-  await writeFile(file, serializeConfig({
-    schema_version: 1,
+  await writeFile(file, renderConfigToml(normalizeConfig({
     editor: ['code', '--new-window'],
     commands: [],
-  }), 'utf8');
+  })), 'utf8');
   const { spawns } = await harness(['o'], { dir });
   assert.deepEqual(taskFrom(spawns[0]).editor, ['code', '--new-window']);
 });
 
-test('adding a command writes commands.json and keeps the popup open', async () => {
+test('adding a command writes commands.toml and keeps the popup open', async () => {
   const { dir, file } = await scratch();
   const { code, spawns, stdout } = await harness(['a', 'Tidy', '\t\t', 'ls', '\r', '\u001b'], { dir });
   assert.equal(code, 0);
   assert.deepEqual(spawns, [], 'saving must not spawn the runner');
-  const written = JSON.parse(await readFile(file, 'utf8'));
+  const written = normalizeConfig(parseConfigToml(await readFile(file, 'utf8')));
   assert.equal(written.commands.length, 4);
   assert.deepEqual(written.commands[3], {
     id: 'tidy', label: 'Tidy', type: 'shell', command: 'ls', cwd: 'focused', description: '',
@@ -200,11 +200,11 @@ test('a saved command is immediately runnable in the same session', async () => 
   assert.equal(taskFrom(spawns[0]).command.id, 'tidy');
 });
 
-test('deleting a command rewrites commands.json', async () => {
+test('deleting a command rewrites commands.toml', async () => {
   const { dir, file } = await scratch();
   const { code } = await harness(['d', 'y', '\u001b'], { dir });
   assert.equal(code, 0);
-  const written = JSON.parse(await readFile(file, 'utf8'));
+  const written = normalizeConfig(parseConfigToml(await readFile(file, 'utf8')));
   assert.deepEqual(written.commands.map((command) => command.id), [
     'open-repo-on-github',
     'open-pull-request',
@@ -215,27 +215,27 @@ test('editing a command rewrites it in place', async () => {
   const { dir, file } = await scratch();
   const { code } = await harness(['e', '\u007f\u007f\u007f\u007f', 'Kod', '\r', '\u001b'], { dir });
   assert.equal(code, 0);
-  const written = JSON.parse(await readFile(file, 'utf8'));
+  const written = normalizeConfig(parseConfigToml(await readFile(file, 'utf8')));
   assert.equal(written.commands[0].id, 'open-in-vs-code');
   assert.match(written.commands[0].label, /Kod$/u);
 });
 
-test('an invalid commands.json opens in error mode and still offers the editor', async () => {
+test('an invalid commands.toml opens in error mode and still offers the editor', async () => {
   const { dir, file } = await scratch();
-  await writeFile(file, '{ broken', 'utf8');
+  await writeFile(file, '[[commands]]\nlabel = ', 'utf8');
   const { code, spawns, stdout } = await harness(['o'], { dir });
   assert.equal(code, 0);
   assert.match(stdout.frames[0], /config error/u);
-  assert.match(stdout.frames[0], /not valid JSON/u);
+  assert.match(stdout.frames[0], /not valid TOML/u);
   assert.equal(taskFrom(spawns[0]).kind, 'open-config');
   assert.deepEqual(taskFrom(spawns[0]).editor, ['code']);
 });
 
-test('an invalid commands.json is never overwritten by the popup', async () => {
+test('an invalid commands.toml is never overwritten by the popup', async () => {
   const { dir, file } = await scratch();
-  await writeFile(file, '{ broken', 'utf8');
+  await writeFile(file, '[[commands]]\nlabel = ', 'utf8');
   await harness(['a', 'X', '\r', '\u001b'], { dir });
-  assert.equal(await readFile(file, 'utf8'), '{ broken');
+  assert.equal(await readFile(file, 'utf8'), '[[commands]]\nlabel = ');
 });
 
 test('a save that collides with an external edit switches to error mode', async () => {
@@ -258,7 +258,7 @@ test('a save that collides with an external edit switches to error mode', async 
   });
   // Let the popup finish loading and enter the form, then edit the file behind it.
   await new Promise((resolve) => { setTimeout(resolve, 50); });
-  await writeFile(file, serializeConfig({ schema_version: 1, editor: ['code'], commands: [] }), 'utf8');
+  await writeFile(file, renderConfigToml(normalizeConfig({ editor: ['code'], commands: [] })), 'utf8');
   stdin.push('Tidy\t\tls\r');
   await new Promise((resolve) => { setTimeout(resolve, 50); });
   stdin.push('\u001b');

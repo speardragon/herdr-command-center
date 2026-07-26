@@ -6,7 +6,8 @@ import test from 'node:test';
 
 import { editConfig } from '../bin/edit-config.mjs';
 import { openPalette } from '../bin/open.mjs';
-import { serializeConfig } from '../src/schema.mjs';
+import { normalizeConfig } from '../src/schema.mjs';
+import { renderConfigToml } from '../src/toml-config.mjs';
 
 function stderrSink() {
   const lines = [];
@@ -103,13 +104,12 @@ test('openPalette reports a generic failure', async () => {
   assert.match(stderr.lines.join(''), /could not be opened/u);
 });
 
-test('editConfig opens commands.json with the configured editor', async () => {
+test('editConfig opens commands.toml with the configured editor', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cc-action-'));
-  await writeFile(join(dir, 'commands.json'), serializeConfig({
-    schema_version: 1,
+  await writeFile(join(dir, 'commands.toml'), renderConfigToml(normalizeConfig({
     editor: ['code', '-g'],
     commands: [],
-  }), 'utf8');
+  })), 'utf8');
   const spawns = [];
   const code = await editConfig({
     env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },
@@ -122,7 +122,7 @@ test('editConfig opens commands.json with the configured editor', async () => {
   assert.equal(code, 0);
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0].file, 'code');
-  assert.deepEqual(spawns[0].args, ['-g', join(dir, 'commands.json')]);
+  assert.deepEqual(spawns[0].args, ['-g', join(dir, 'commands.toml')]);
   assert.equal(spawns[0].options.detached, true);
 });
 
@@ -139,12 +139,12 @@ test('editConfig seeds nothing but still opens a file that does not exist yet', 
   });
   assert.equal(code, 0);
   assert.equal(spawns[0].file, 'code');
-  assert.deepEqual(spawns[0].args, [join(dir, 'commands.json')]);
+  assert.deepEqual(spawns[0].args, [join(dir, 'commands.toml')]);
 });
 
 test('editConfig falls back to the default editor when the file is broken', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cc-action-'));
-  await writeFile(join(dir, 'commands.json'), '{ broken', 'utf8');
+  await writeFile(join(dir, 'commands.toml'), '[[commands]]\nlabel = ', 'utf8');
   const spawns = [];
   const code = await editConfig({
     env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },

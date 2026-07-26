@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // The interactive half of Command Center. It reads keys, renders frames, and
-// persists commands.json — but it never runs a command. On a run/open-config
+// persists commands.toml — but it never runs a command. On a run/open-config
 // effect it spawns bin/run.mjs detached and returns; its own exit is what closes
 // the herdr popup, which is precisely the ordering the runner then depends on.
 
@@ -80,7 +80,7 @@ export async function runPopup({
     raw = loaded.raw;
   } catch (error) {
     if (!(error instanceof ConfigError)) {
-      diagnostic(stderr, 'commands.json could not be opened');
+      diagnostic(stderr, 'commands.toml could not be opened');
       return 1;
     }
     // A broken config must still give the user a way to fix it, so keep a

@@ -121,7 +121,7 @@ function normalizeEditor(value) {
 
 export function normalizeConfig(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ConfigError('commands.json must contain a JSON object');
+    throw new ConfigError('commands.toml must contain a TOML table');
   }
   const version = value.schema_version ?? SCHEMA_VERSION;
   if (version !== SCHEMA_VERSION) {
@@ -182,8 +182,4 @@ export function defaultConfig() {
       },
     ],
   };
-}
-
-export function serializeConfig(doc) {
-  return `${JSON.stringify(doc, null, 2)}\n`;
 }

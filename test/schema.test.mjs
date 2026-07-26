@@ -11,7 +11,6 @@ import {
   normalizeConfig,
   parsePluginActionTarget,
   SCHEMA_VERSION,
-  serializeConfig,
   slugify,
   uniqueId,
 } from '../src/schema.mjs';
@@ -191,11 +190,4 @@ test('normalizeConfig rejects duplicate explicit ids', () => {
     }),
     (error) => error instanceof ConfigError && /duplicate/u.test(error.message),
   );
-});
-
-test('serializeConfig writes stable indented JSON with a trailing newline', () => {
-  const text = serializeConfig(defaultConfig());
-  assert.ok(text.endsWith('\n'));
-  assert.match(text, /^\{\n {2}"schema_version": 1,/u);
-  assert.deepEqual(normalizeConfig(JSON.parse(text)), defaultConfig());
 });

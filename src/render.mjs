@@ -78,7 +78,7 @@ function listBody(view, width, budget, color) {
   const header = clipLine(`Command Center · ${count} command${count === 1 ? '' : 's'}`, width);
   const lines = [color ? styles.bold(header) : header, ''];
   if (count === 0) {
-    lines.push(...wrap('Press a to add one, or o to open commands.json in your editor.', width));
+    lines.push(...wrap('Press a to add one, or o to open commands.toml in your editor.', width));
     return lines;
   }
   const selected = commands[Math.max(0, Math.min(count - 1, view.cursor))];
@@ -138,7 +138,7 @@ function errorBody(view, width, budget, color) {
   return [
     color ? styles.bold(title) : title,
     '',
-    ...wrap(view.error ?? 'commands.json could not be loaded', width),
+    ...wrap(view.error ?? 'commands.toml could not be loaded', width),
   ].slice(0, Math.max(1, budget));
 }
 
