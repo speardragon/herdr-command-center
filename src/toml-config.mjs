@@ -62,9 +62,14 @@ export function parseConfigToml(text, fileName = 'commands.toml') {
     return parseToml(String(text));
   } catch (error) {
     const line = Number.isSafeInteger(error?.line) ? ` at line ${error.line}` : '';
-    const detail = typeof error?.message === 'string' && error.message.length <= 200
-      ? `: ${error.message}`
+    // smol-toml puts the reason on the first line, then a blank line, a source
+    // excerpt and a caret. Keep only the reason: the popup collapses newlines
+    // when it wraps text, so the excerpt would arrive as noise mashed onto the
+    // end of the sentence.
+    const reason = typeof error?.message === 'string'
+      ? error.message.split('\n', 1)[0].trim()
       : '';
+    const detail = reason.length > 0 && reason.length <= 160 ? `: ${reason}` : '';
     throw new ConfigError(`${fileName} is not valid TOML${line}${detail}`);
   }
 }

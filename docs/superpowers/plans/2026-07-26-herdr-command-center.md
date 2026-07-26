@@ -5725,6 +5725,20 @@ test('parseConfigToml reports malformed TOML as a ConfigError naming the file', 
   });
 });
 
+test('parseConfigToml keeps only the reason, not the source excerpt', () => {
+  assert.throws(() => parseConfigToml('[[commands]]\nlabel = \n'), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /not valid TOML at line \d+/u);
+    assert.match(error.message, /no value specified/u);
+    // smol-toml appends a blank line, a source excerpt and a caret diagram. The
+    // popup collapses newlines when wrapping, so none of that may reach it.
+    assert.ok(!error.message.includes('^'), error.message);
+    assert.ok(!error.message.includes('\n'), error.message);
+    assert.ok(error.message.length < 160, error.message);
+    return true;
+  });
+});
+
 test('parseConfigToml reports a duplicated key rather than throwing raw', () => {
   assert.throws(
     () => parseConfigToml('a = 1\na = 2'),
@@ -5805,9 +5819,14 @@ export function parseConfigToml(text, fileName = 'commands.toml') {
     return parseToml(String(text));
   } catch (error) {
     const line = Number.isSafeInteger(error?.line) ? ` at line ${error.line}` : '';
-    const detail = typeof error?.message === 'string' && error.message.length <= 200
-      ? `: ${error.message}`
+    // smol-toml puts the reason on the first line, then a blank line, a source
+    // excerpt and a caret. Keep only the reason: the popup collapses newlines
+    // when it wraps text, so the excerpt would arrive as noise mashed onto the
+    // end of the sentence.
+    const reason = typeof error?.message === 'string'
+      ? error.message.split('\n', 1)[0].trim()
       : '';
+    const detail = reason.length > 0 && reason.length <= 160 ? `: ${reason}` : '';
     throw new ConfigError(`${fileName} is not valid TOML${line}${detail}`);
   }
 }
@@ -5816,7 +5835,7 @@ export function parseConfigToml(text, fileName = 'commands.toml') {
 - [ ] **Step 6: Run the codec tests**
 
 Run: `node --test test/toml-config.test.mjs`
-Expected: PASS — 13 tests.
+Expected: PASS — 14 tests.
 
 - [ ] **Step 7: Commit**
 
@@ -6732,10 +6751,10 @@ nothing about that message. Confirm by running it.
 - [ ] **Step 9: Run the whole suite**
 
 Run: `npm test`
-Expected: **231 tests, 1 fail** — the remaining failure is
+Expected: **232 tests, 1 fail** — the remaining failure is
 `manifest identity matches the shared plugin constants`, which pins the config file
 name and is updated in Task 16 Step 2. Every other test must pass. The total moves
-from 199 to **231**: `serializeConfig`'s test is gone (−1), `test/store.test.mjs` grows from 10 to 15 (+5), `test/paths.test.mjs` grows from 7 to 8 (+1), and the two new files add 13 + 14 (+27). If your count differs, do not adjust a test to reach it — report the discrepancy with the failing or unexpected test names.
+from 199 to **232**: `serializeConfig`'s test is gone (−1), `test/store.test.mjs` grows from 10 to 15 (+5), `test/paths.test.mjs` grows from 7 to 8 (+1), and the two new files add 14 + 14 (+28). If your count differs, do not adjust a test to reach it — report the discrepancy with the failing or unexpected test names.
 
 - [ ] **Step 10: Commit**
 
@@ -6891,7 +6910,7 @@ test('both READMEs document every config field and the migration', async () => {
 - [ ] **Step 3: Run the whole suite**
 
 Run: `npm test`
-Expected: PASS — 231 tests, 0 fail.
+Expected: PASS — 232 tests, 0 fail.
 
 - [ ] **Step 4: Commit**
 

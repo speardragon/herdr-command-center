@@ -125,6 +125,20 @@ test('parseConfigToml reports malformed TOML as a ConfigError naming the file', 
   });
 });
 
+test('parseConfigToml keeps only the reason, not the source excerpt', () => {
+  assert.throws(() => parseConfigToml('[[commands]]\nlabel = \n'), (error) => {
+    assert.ok(error instanceof ConfigError);
+    assert.match(error.message, /not valid TOML at line \d+/u);
+    assert.match(error.message, /no value specified/u);
+    // smol-toml appends a blank line, a source excerpt and a caret diagram. The
+    // popup collapses newlines when wrapping, so none of that may reach it.
+    assert.ok(!error.message.includes('^'), error.message);
+    assert.ok(!error.message.includes('\n'), error.message);
+    assert.ok(error.message.length < 160, error.message);
+    return true;
+  });
+});
+
 test('parseConfigToml reports a duplicated key rather than throwing raw', () => {
   assert.throws(
     () => parseConfigToml('a = 1\na = 2'),
