@@ -46,3 +46,42 @@ test('manifest build pipeline checks Node and runs the tests', async () => {
   assert.match(text, /Node\.js >= 22 required/);
   assert.match(text, /command = \["npm", "test"\]/);
 });
+
+test('both READMEs document the herdr 0.7.5 action argument order', async () => {
+  for (const name of ['README.md', 'README.ko.md']) {
+    const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
+    for (const action of ['open', 'edit-config']) {
+      assert.match(
+        text,
+        new RegExp(`herdr plugin action invoke ${action} --plugin ${PLUGIN_ID.replace('.', '\\.')}`),
+        `${name} is missing the ${action} invocation`,
+      );
+    }
+  }
+});
+
+test('both READMEs document the keybinding that opens the popup', async () => {
+  for (const name of ['README.md', 'README.ko.md']) {
+    const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
+    assert.match(text, /type = "plugin_action"/u, name);
+    assert.match(text, new RegExp(`command = "${PLUGIN_ID.replace('.', '\\.')}\\.open"`), name);
+    assert.match(text, /herdr server reload-config/u, name);
+  }
+});
+
+test('both READMEs state the version floors the manifest enforces', async () => {
+  for (const name of ['README.md', 'README.ko.md']) {
+    const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
+    assert.match(text, /Node\.js 22\+/u, name);
+    assert.match(text, /0\.7\.5\+/u, name);
+  }
+});
+
+test('both READMEs document every config field', async () => {
+  for (const name of ['README.md', 'README.ko.md']) {
+    const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
+    for (const field of ['schema_version', 'editor', 'label', 'plugin_action', 'focused', 'workspace', 'description']) {
+      assert.ok(text.includes(field), `${name} does not document ${field}`);
+    }
+  }
+});
