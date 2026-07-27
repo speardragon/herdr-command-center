@@ -31,25 +31,36 @@ import unicodedata
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 WORK = REPO / 'docs' / '.frames'
-COLS = 88
+COLS = 120
 
 DEMO = """schema_version = 1
-editor = ["code"]
+editor = ["code --new-window", "nvim"]
 
 # 자주 쓰는 것들
 [[commands]]
+slot = "1"
 label = "Open in VS Code"
 type = "shell"
 command = "code ."
+cwd = "focused"
 description = "포커스된 페인의 디렉터리를 VS Code로 열기"
 
 [[commands]]
-label = "File explorer"
-type = "plugin_action"
-command = "ray.file-explorer.open"
-description = "Yazi를 split으로 열기"
+slot = "2"
+label = "Open repo on GitHub"
+type = "shell"
+command = "gh browse"
+description = "현재 저장소를 브라우저로 열기"
 
 [[commands]]
+slot = "3"
+label = "Open pull request"
+type = "shell"
+command = "gh pr view --web"
+description = "이 브랜치의 PR을 브라우저로 열기"
+
+[[commands]]
+slot = "4"
 label = "브랜치 정리"
 type = "shell"
 command = "git branch --merged | grep -v main | xargs -r git branch -d"
@@ -57,41 +68,112 @@ cwd = "workspace"
 description = "이미 병합된 로컬 브랜치 삭제"
 
 [[commands]]
-label = "Open pull request"
-type = "shell"
-command = "gh pr view --web"
-description = "이 브랜치의 PR을 브라우저로 열기"
-
-[[commands]]
-label = "Agent tool history"
-type = "plugin_action"
-command = "cdragon.agent-tool-history.show"
-description = "에이전트가 쓴 도구 기록 보기"
-
-[[commands]]
+slot = "5"
 label = "Lazygit in a split"
 type = "shell"
 command = "herdr pane split --cwd ."
 description = "git TUI를 옆 페인에서 열기"
 
 [[commands]]
-label = "Run tests"
-type = "shell"
-command = "npm test"
-cwd = "workspace"
-description = "워크스페이스 루트에서 테스트 실행"
-
-[[commands]]
+slot = "6"
 label = "서버 로그"
 type = "shell"
 command = "tail -f ~/.config/herdr/herdr-server.log"
 description = "herdr 서버 로그 따라가기"
 
 [[commands]]
+slot = "7"
 label = "워크트리 목록"
 type = "shell"
 command = "herdr worktree list"
 description = "열려 있는 worktree 확인"
+
+[[commands]]
+slot = "8"
+label = "Reload herdr config"
+type = "shell"
+command = "herdr server reload-config"
+description = "설정 다시 불러오기"
+
+[[commands]]
+slot = "9"
+label = "Open changelog"
+type = "shell"
+command = "code CHANGELOG.md"
+description = "체인지로그 열기"
+
+[[commands]]
+slot = "0"
+label = "Reinstall dependencies"
+type = "shell"
+command = "rm -rf node_modules && npm ci"
+cwd = "workspace"
+description = "의존성 재설치"
+
+[[commands]]
+slot = "s"
+label = "git status"
+type = "pane"
+command = "git status --short --branch"
+description = "포커스된 페인에서 git status 실행"
+
+[[commands]]
+slot = "f"
+label = "File explorer"
+type = "plugin_action"
+command = "ray.file-explorer.open"
+description = "Yazi를 split으로 열기"
+
+[[commands]]
+slot = "g"
+label = "Agent tool history"
+type = "plugin_action"
+command = "cdragon.agent-tool-history.show"
+description = "에이전트가 쓴 도구 기록 보기"
+
+[[commands]]
+slot = "t"
+label = "Run tests"
+type = "pane"
+command = "npm test"
+cwd = "workspace"
+description = "워크스페이스 루트에서 테스트 실행"
+"""
+
+# A herdr config for the import shot: a handful of [[keys.command]] entries the
+# way a real ~/.config/herdr/config.toml would have them. One duplicates a DEMO
+# command exactly (already added), one uses a herdr type this plugin has no
+# equivalent for (unsupported), and the binding that opens this very popup is in
+# there too, to prove the importer filters it out rather than offering it back.
+HERDR_CONFIG = """[[keys.command]]
+key = "prefix+a"
+type = "plugin_action"
+command = "cdragon.command-center.open"
+description = "Open Command Center"
+
+[[keys.command]]
+key = "prefix+d"
+type = "shell"
+command = "code ."
+description = "Open in VS Code"
+
+[[keys.command]]
+key = "prefix+l"
+type = "popup"
+command = "lazygit"
+description = "Open lazygit in a popup"
+
+[[keys.command]]
+key = "prefix+w"
+type = "focus_pane"
+command = "focus-west"
+description = "Focus the west pane"
+
+[[keys.command]]
+key = "prefix+r"
+type = "shell"
+command = "npm run build"
+description = "Build the project"
 """
 
 
@@ -100,11 +182,13 @@ def capture(name, config_text, keys, rows, settle=0.75):
     cfg = WORK / name
     cfg.mkdir(parents=True, exist_ok=True)
     (cfg / 'commands.toml').write_text(config_text, encoding='utf8')
+    (cfg / 'herdr-config.toml').write_text(HERDR_CONFIG, encoding='utf8')
 
     env = dict(os.environ)
     env.update({
         'HERDR_PLUGIN_CONFIG_DIR': str(cfg),
         'HERDR_PLUGIN_STATE_DIR': str(cfg / 'state'),
+        'HERDR_CONFIG_PATH': str(cfg / 'herdr-config.toml'),
         'COMMAND_CENTER_CONTEXT_JSON': json.dumps(
             {'focusedPaneCwd': '/Users/cdragon/dev/herdr', 'workspaceCwd': '/Users/cdragon/dev'}),
         'TERM': 'xterm-256color',
@@ -166,9 +250,10 @@ BROKEN = 'schema_version = 1\neditor = ["code"]\n\n[[commands]]\nlabel = \n'
 # terminal height, not crops of a taller one.
 SHOTS = [
     ('popup-list', DEMO, [], 18, 'the command list'),
-    ('popup-form', DEMO, ['a', '배포 스크립트', '\t\t', './scripts/deploy.sh'], 13,
+    ('popup-form', DEMO, ['A', '배포 스크립트', '\t\t\t', './scripts/deploy.sh'], 13,
      'adding a command, caret on the Command field'),
     ('popup-error', BROKEN, [], 10, 'a config file with a typo'),
+    ('popup-import', DEMO, ['I'], 14, 'importing from the herdr config'),
 ]
 
 

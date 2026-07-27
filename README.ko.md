@@ -4,13 +4,14 @@
 
 `cdragon.command-center`는 수많은 prefix 키 조합을 **키 하나**로 바꿔주는 herdr
 플러그인입니다. 그 키를 누르면 등록해 둔 커맨드 목록이 팝업으로 뜹니다. 방향키로
-옮겨서 Enter를 누르거나, 옆에 붙은 번호를 바로 누르면 실행됩니다.
+옮겨서 Enter를 누르거나, 옆에 붙은 슬롯 키를 바로 누르면 실행됩니다.
 
-![등록된 커맨드 9개가 번호와 함께 나열된 Command Center 팝업](docs/popup-list.png)
+![그리드로 나열된 커맨드들, 각자 자기 슬롯 키를 가진 Command Center 팝업](docs/popup-list.png)
 
-커맨드 9개에 번호가 붙어 있습니다. `3`을 누르면 브랜치 정리 커맨드가 바로
-실행됩니다 — 방향키도, 그게 어느 prefix 키였는지 떠올릴 필요도 없습니다. 목록
-아래 줄은 선택한 커맨드가 실제로 무엇을 하는지 실행 전에 보여줍니다.
+모든 커맨드는 슬롯을 가집니다: `1`–`9`, `0`, 그다음 `a`–`z`. `s`를 누르면
+git status 커맨드가 바로 실행됩니다 — 방향키도, 그게 어느 prefix 키였는지 떠올릴
+필요도 없습니다. 그리드 아래 줄은 선택한 커맨드가 실제로 무엇을 하는지 실행 전에
+보여줍니다.
 
 핵심은 외우지 않아도 된다는 점입니다. herdr 플러그인이 늘어날수록 각자
 `prefix+<키>`를 하나씩 차지하는데, 어느 순간부터 어떤 키가 무엇인지 기억할 수
@@ -64,29 +65,32 @@ herdr server reload-config
 
 | 키 | 목록에서 | 추가/수정 폼에서 |
 | --- | --- | --- |
-| `↑` `↓` | 선택 이동 | 이전 / 다음 필드 |
+| `1`–`9`, `0`, `a`–`z` | 해당 슬롯의 커맨드 실행 | 포커스된 텍스트 필드에 입력됨 |
+| `↑` `↓` `←` `→` | 그리드 안에서 이동 | 이전 / 다음 필드 |
 | `Tab` / `Shift-Tab` | — | 다음 / 이전 필드 |
-| `k` `j` | 선택 이동 | 포커스된 텍스트 필드에 입력됨 |
 | `Enter` | 선택한 커맨드 실행 | 저장 |
-| `1`–`9` | 그 번호의 커맨드 실행 | 숫자 입력 |
-| `a` | 커맨드 추가 | — |
-| `e` | 선택한 커맨드 수정 | — |
-| `d` 다음 `y` | 선택한 커맨드 삭제 | — |
-| `←` `→` / `Space` | — | `Type`·`Cwd` 값 변경 |
+| `A` | 커맨드 추가 | — |
+| `E` | 선택한 커맨드 수정 | — |
+| `D` 다음 `y` | 선택한 커맨드 삭제 | — |
+| `O` | `commands.toml`을 에디터로 열기 | — |
+| `I` | herdr 설정에서 가져오기 | — |
+| `Space` | — | `Slot`·`Type`·`Cwd` 값 변경 |
 | `Backspace` | — | 마지막 글자 삭제 |
-| `o` | `commands.toml`을 에디터로 열기 | — |
 | `Esc` | 팝업 닫기 | 취소하고 목록으로 |
 | `Ctrl-C` | 팝업 닫기 | 팝업 닫기 |
 
-번호는 **절대 위치**입니다. 목록이 아무리 스크롤되어 있어도 `3`은 항상 파일의 세
-번째 커맨드를 실행합니다. 열 번째 이후 커맨드에는 번호가 붙지 않고 방향키로
-접근합니다.
+**소문자·숫자는 실행, 대문자는 동작입니다.** 커맨드를 실행하는 키는 `slot`으로
+커맨드에 함께 저장되므로, 목록 순서를 바꿔도 변하지 않습니다 — `d`는 언제나
+`d` 슬롯의 커맨드를 실행합니다. 슬롯 36개를 모두 쓸 수 있습니다.
 
-팝업을 벗어나지 않고 `a`로 바로 추가할 수 있습니다. `Tab`으로 필드를 옮기고,
-`←`/`→`로 `Type`과 `Cwd`를 바꾸고, `Enter`를 누르면 `commands.toml`에 기록됩니다.
+여기서 두 가지가 따라옵니다. `j`·`k`가 슬롯이 되었으니 이동은 방향키로만 하고,
+`q`가 슬롯이 되었으니 팝업은 `Esc`로 닫습니다.
+
+팝업을 벗어나지 않고 `A`로 바로 추가할 수 있습니다. `Tab`으로 필드를 옮기고,
+`←`/`→`로 `Slot`·`Type`·`Cwd`를 바꾸고, `Enter`를 누르면 `commands.toml`에 기록됩니다.
 
 깜빡이는 커서가 지금 타이핑되는 필드를 알려주므로 짐작할 필요가 없습니다 — 그냥
-치면 됩니다. `Type`과 `Cwd`에는 일부러 커서를 두지 않았습니다. 방향키로 바꾸는
+치면 됩니다. `Slot`·`Type`·`Cwd`에는 일부러 커서를 두지 않았습니다. 방향키로 바꾸는
 필드인데 커서가 있으면 되지도 않는 타이핑을 약속하는 셈이니까요.
 
 ![팝업에서 커맨드를 추가하는 화면, Command 필드에 포커스가 있음](docs/popup-form.png)
@@ -97,7 +101,7 @@ herdr server reload-config
 > 변환하고 원본은 `commands.json.bak`으로 이름만 바꿔 둡니다. 삭제하지 않습니다.
 
 팝업이 편집하는 내용은 전부 TOML 파일 하나에 들어 있고, 이 파일은 직접 손으로
-고치는 것도 전제로 하고 있습니다. 팝업에서 `o`를 누르거나, 액션을 직접 실행하세요:
+고치는 것도 전제로 하고 있습니다. 팝업에서 `O`를 누르거나, 액션을 직접 실행하세요:
 
 ```bash
 herdr plugin action invoke edit-config --plugin cdragon.command-center
@@ -112,36 +116,52 @@ herdr plugin config-dir cdragon.command-center
 
 ```toml
 schema_version = 1
-editor = ["code"]
+editor = ["code --new-window", "nvim"]
 
-# the ones I actually use
+# 자주 쓰는 것들
 [[commands]]
-id = "open-in-vs-code"
+slot = "1"
 label = "Open in VS Code"
 type = "shell"
 command = "code ."
 cwd = "focused"
-description = "포커스된 페인의 디렉터리를 VS Code로 열기"
 
 [[commands]]
+slot = "s"
+label = "git status"
+type = "pane"
+command = "git status --short --branch"
+
+[[commands]]
+slot = "f"
 label = "File explorer"
 type = "plugin_action"
 command = "ray.file-explorer.open"
 
 # [[commands]]                 <- commented out for now
+# slot = "g"
 # label = "Lazygit"
-# type = "shell"
+# type = "pane"
 # command = "lazygit"
 ```
+
+플래그는 별도 항목이 아니라 한 항목 안에 넣습니다:
+
+```toml
+editor = ["code --new-window", "nvim", "vim"]
+```
+
+플래그가 붙은 첫 항목을 포함해 세 개의 후보입니다.
 
 | 필드 | 의미 |
 | --- | --- |
 | `schema_version` | 항상 `1`. |
-| `editor` | `o` 키와 `edit-config` 액션이 사용할 argv. 기본값 `["code"]`. |
+| `editor` | 후보 에디터 목록, 한 줄당 커맨드 하나. 하나만 있으면 바로 열리고, 여러 개면 팝업이 무엇을 열지 묻습니다. 생략하거나 비워두면 `$VISUAL`, `$EDITOR`, `PATH` 순으로 자동 감지합니다. |
 | `id` | 고정 식별자. 생략하면 label에서 만들어집니다(한글 label도 읽을 수 있는 id가 됩니다). |
+| `slot` | 실행 키: `1`-`9`, `0`, `a`-`z` 중 하나. 생략하면 비어 있는 다음 슬롯이 배정됩니다. |
 | `label` | 팝업에 보이는 이름. 최대 80자. |
-| `type` | `shell` 또는 `plugin_action`. |
-| `command` | `shell`이면 한 줄 셸 커맨드, `plugin_action`이면 `<plugin_id>.<action_id>`. |
+| `type` | `shell`, `pane`, 또는 `plugin_action`. |
+| `command` | `shell`과 `pane`은 한 줄 셸 커맨드, `plugin_action`은 `<plugin_id>.<action_id>`. |
 | `cwd` | `focused`(기본), `workspace`, 또는 절대 경로. `plugin_action`에서는 무시됩니다. |
 | `description` | 목록 아래에 보여줄 한 줄 설명(선택). |
 
@@ -154,14 +174,36 @@ command = "ray.file-explorer.open"
 > 팝업에서 수정한 블록 *안쪽*의 주석은 그 블록이 다시 쓰이므로 사라집니다.
 >
 > 형식이 깨진 파일은 무엇이 문제인지 알려주는 에러 화면으로 열리고, 그 화면에서도
-> `o`로 고치러 갈 수 있습니다. 깨진 파일을 덮어쓰지는 않습니다.
+> `O`로 고치러 갈 수 있습니다. 깨진 파일을 덮어쓰지는 않습니다.
 
 ![TOML 파싱 오류를 줄 번호와 함께 보여주는 팝업](docs/popup-error.png)
 
+### 실행 결과가 표시되는 곳
+
+| `type` | 동작 |
+| --- | --- |
+| `shell` | 백그라운드에서 분리되어 해석된 `cwd`에서 실행됩니다. 자체 창을 여는 것들에 적합합니다 — `code .`, `gh browse`. 표준 출력은 보이지 않습니다. |
+| `pane` | 보고 있던 페인에 입력되어 그 자리에서 실행되므로 출력이 보입니다. `echo`, `git status`, `npm test` 같은 것에 적합합니다. |
+| `plugin_action` | 다른 herdr 플러그인의 액션을 `<plugin_id>.<action_id>` 형태로 호출합니다. |
+
+> 포커스된 페인에서 agent가 돌고 있으면 `pane` 커맨드는 거부됩니다. 그 경우 herdr가
+> 명령을 셸이 아니라 **agent에게 프롬프트로** 넣기 때문입니다. 의도하지 않은 프롬프트를
+> 보내는 대신 알림으로 이유를 알려줍니다.
+
+### 이미 갖고 있는 설정 가져오기
+
+`I`를 누르면 Command Center가 `~/.config/herdr/config.toml`의 `[[keys.command]]`
+항목 — 이 플러그인이 대체하려는 그 prefix 키바인딩들 — 을 읽어서 보여줍니다. 하나를
+고르면 추가 폼이 미리 채워진 채로 열리므로, 슬롯은 직접 고르고 저장 전에 label도
+고칠 수 있습니다. 이미 추가된 항목은 표시되고, herdr 타입에 대응하는 게 없는 항목은
+조용히 버려지는 대신 이유와 함께 나열됩니다.
+
+![herdr의 config.toml에서 키바인딩을 읽어와 보여주는 가져오기 목록](docs/popup-import.png)
+
 ### herdr가 할 수 있는 건 다 됩니다
 
-`type`을 `shell`과 `plugin_action` 둘로만 둔 이유는, `shell` 커맨드가 `herdr` CLI를
-호출할 수 있어서 herdr가 하는 일은 전부 가능하기 때문입니다:
+`type`을 `shell`·`pane`·`plugin_action` 셋으로만 둔 이유는, `shell` 커맨드가 `herdr`
+CLI를 호출할 수 있어서 herdr가 하는 일은 전부 가능하기 때문입니다:
 
 ```toml
 [[commands]]
@@ -191,7 +233,7 @@ find ~/.config/herdr -name run.log -path '*command-center*' -exec tail -20 {} +
 ```
 
 각 줄에는 팝업이 닫힌 것을 확인했는지(`popup-closed`), 무엇을 시작했는지
-(`shell` / `plugin_action` / `open-config`), 실패했다면 그 내용(`failed`,
+(`shell` / `pane` / `plugin_action` / `open-config`), 실패했다면 그 내용(`failed`,
 `plugin_action_failed`)이 남습니다.
 
 **셸 커맨드가 엉뚱한 디렉터리에서 실행됩니다.** `cwd: "focused"`는 키를 누른 시점에

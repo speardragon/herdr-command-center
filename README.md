@@ -5,13 +5,14 @@
 `cdragon.command-center` is a herdr plugin that replaces a drawer full of
 prefix keybindings with **one** keybinding. Press it, and a popup lists every
 command you registered. Move with the arrow keys and press Enter, or just press
-the number next to the one you want.
+the slot key next to the one you want.
 
-![The Command Center popup listing nine registered commands, the first one highlighted](docs/popup-list.png)
+![The Command Center popup listing commands in a grid, each with its own slot key](docs/popup-list.png)
 
-Nine commands, numbered. Press `3` and the branch-tidying command runs — no
-arrow keys, no remembering which prefix key it was under. The line under the
-list shows what the highlighted command actually does before you commit to it.
+Every command has a slot: `1`–`9`, `0`, then `a`–`z`. Press `s` and the
+git-status command runs — no arrow keys, no remembering which prefix key it was
+under. The line under the grid shows what the highlighted command actually does
+before you commit to it.
 
 The point is that you stop memorizing. As you install more herdr plugins, each
 one wants its own `prefix+<key>`, and eventually you cannot remember which key
@@ -67,30 +68,34 @@ herdr server reload-config
 
 | Key | In the list | In the add/edit form |
 | --- | --- | --- |
-| `↑` `↓` | move the selection | previous / next field |
+| `1`–`9`, `0`, `a`–`z` | run the command in that slot | typed into the focused text field |
+| `↑` `↓` `←` `→` | move through the grid | previous / next field |
 | `Tab` / `Shift-Tab` | — | next / previous field |
-| `k` `j` | move the selection | typed into the focused text field |
-| `Enter` | run the selected command | save |
-| `1`–`9` | run the command with that badge | type the digit |
-| `a` | add a command | — |
-| `e` | edit the selected command | — |
-| `d` then `y` | delete the selected command | — |
-| `←` `→` / `Space` | — | change `Type` or `Cwd` |
+| `Enter` | run the highlighted command | save |
+| `A` | add a command | — |
+| `E` | edit the highlighted command | — |
+| `D` then `y` | delete the highlighted command | — |
+| `O` | open `commands.toml` in your editor | — |
+| `I` | import from your herdr config | — |
+| `Space` | — | change `Slot`, `Type` or `Cwd` |
 | `Backspace` | — | delete the last character |
-| `o` | open `commands.toml` in your editor | — |
 | `Esc` | close the popup | discard and go back |
 | `Ctrl-C` | close the popup | close the popup |
 
-Badges are **absolute positions**: `3` always runs the third command in the
-file, no matter how far the list has scrolled. Commands past the ninth have no
-badge and are reached with the arrow keys.
+**Lowercase and digits run; uppercase acts.** The key that runs a command is
+stored with the command as its `slot`, so it never changes when the list is
+reordered — `d` runs whatever lives in slot `d`. All 36 slots are usable.
 
-Press `a` to add one without leaving the popup. `Tab` moves between fields,
-`←`/`→` cycle `Type` and `Cwd`, and `Enter` writes it to `commands.toml`.
+Two things follow from that. `j` and `k` are slots now, so moving around is
+arrow keys only. `q` is a slot now, so `Esc` is how you close the popup.
+
+Press `A` to add one without leaving the popup. `Tab` moves between fields,
+`←`/`→` cycle `Slot`, `Type` and `Cwd`, and `Enter` writes it to `commands.toml`.
 
 A blinking caret marks the field you are typing into, so there is nothing to
-guess: just type. `Type` and `Cwd` deliberately have no caret — they are changed
-with the arrow keys, and a caret there would promise typing that does nothing.
+guess: just type. `Slot`, `Type` and `Cwd` deliberately have no caret — they are
+changed with the arrow keys, and a caret there would promise typing that does
+nothing.
 
 ![Adding a command in the popup, with the Command field focused](docs/popup-form.png)
 
@@ -101,7 +106,7 @@ with the arrow keys, and a caret there would promise typing that does nothing.
 > `commands.json.bak`. Nothing is deleted.
 
 Everything the popup edits lives in one TOML file you are meant to edit by hand
-too. Press `o` in the popup, or run the action directly:
+too. Press `O` in the popup, or run the action directly:
 
 ```bash
 herdr plugin action invoke edit-config --plugin cdragon.command-center
@@ -116,36 +121,52 @@ herdr plugin config-dir cdragon.command-center
 
 ```toml
 schema_version = 1
-editor = ["code"]
+editor = ["code --new-window", "nvim"]
 
-# the ones I actually use
+# 자주 쓰는 것들
 [[commands]]
-id = "open-in-vs-code"
+slot = "1"
 label = "Open in VS Code"
 type = "shell"
 command = "code ."
 cwd = "focused"
-description = "Open the focused pane's directory in VS Code"
 
 [[commands]]
+slot = "s"
+label = "git status"
+type = "pane"
+command = "git status --short --branch"
+
+[[commands]]
+slot = "f"
 label = "File explorer"
 type = "plugin_action"
 command = "ray.file-explorer.open"
 
 # [[commands]]                 <- commented out for now
+# slot = "g"
 # label = "Lazygit"
-# type = "shell"
+# type = "pane"
 # command = "lazygit"
 ```
+
+Flags belong inside one entry, not as separate entries:
+
+```toml
+editor = ["code --new-window", "nvim", "vim"]
+```
+
+That is three candidates, the first of which passes a flag.
 
 | Field | Meaning |
 | --- | --- |
 | `schema_version` | Always `1`. |
-| `editor` | argv used for the `o` key and the `edit-config` action. Defaults to `["code"]`. |
+| `editor` | Candidate editors, one command line per entry. One entry opens straight away; several make the popup ask which. Omit it or leave it empty to auto-detect from `$VISUAL`, `$EDITOR`, then your `PATH`. |
 | `id` | stable identifier. Omit it and one is derived from the label (Korean labels keep readable ids). |
+| `slot` | the key that runs it: one of `1`-`9`, `0`, `a`-`z`. Omit it and the next free slot is assigned. |
 | `label` | what the popup shows. Up to 80 characters. |
-| `type` | `shell` or `plugin_action`. |
-| `command` | for `shell`, a single-line shell command; for `plugin_action`, `<plugin_id>.<action_id>`. |
+| `type` | `shell`, `pane`, or `plugin_action`. |
+| `command` | for `shell` and `pane`, a single-line shell command; for `plugin_action`, `<plugin_id>.<action_id>`. |
 | `cwd` | `focused` (default), `workspace`, or an absolute path. Ignored for `plugin_action`. |
 | `description` | optional one-line note shown under the list. |
 
@@ -161,14 +182,37 @@ command = "ray.file-explorer.open"
 > because that block is rewritten.
 >
 > A malformed file opens the popup in an error mode that names the problem and
-> still lets you press `o` to go fix it; it is never overwritten.
+> still lets you press `O` to go fix it; it is never overwritten.
 
 ![The popup showing a TOML parse error with the line number](docs/popup-error.png)
 
+### Where the output goes
+
+| `type` | What happens |
+| --- | --- |
+| `shell` | Runs detached in the background, in the resolved `cwd`. Use it for things that open their own window — `code .`, `gh browse`. You will not see stdout. |
+| `pane` | Typed into the pane you were looking at and run there, so you see the output. Use it for `echo`, `git status`, `npm test`. |
+| `plugin_action` | Invokes another herdr plugin's action, as `<plugin_id>.<action_id>`. |
+
+`pane` commands are refused when the focused pane is running an agent, because
+`herdr` would submit the line to that agent as a prompt instead of to a shell. You
+get a notification saying so rather than a prompt you did not mean to send.
+
+### Importing what you already have
+
+Press `I` and Command Center reads the `[[keys.command]]` entries out of your
+`~/.config/herdr/config.toml` — the prefix keybindings this plugin exists to
+replace — and offers them. Choosing one opens the add form prefilled, so you still
+choose the slot and can fix the label before it is written. Entries you have
+already added are marked, and entries whose herdr type has no equivalent here are
+listed with the reason rather than quietly dropped.
+
+![The import list, reading key bindings out of the user's herdr config.toml](docs/popup-import.png)
+
 ### Anything herdr can do
 
-`type` is deliberately just `shell` and `plugin_action`, because a `shell`
-command can call the `herdr` CLI and therefore do anything herdr does:
+`type` is deliberately just `shell`, `pane`, and `plugin_action`, because a
+`shell` command can call the `herdr` CLI and therefore do anything herdr does:
 
 ```toml
 [[commands]]
@@ -198,8 +242,8 @@ find ~/.config/herdr -name run.log -path '*command-center*' -exec tail -20 {} +
 ```
 
 Each line records whether the popup was observed to close (`popup-closed`),
-what was started (`shell` / `plugin_action` / `open-config`), and any failure
-(`failed`, `plugin_action_failed`).
+what was started (`shell` / `pane` / `plugin_action` / `open-config`), and any
+failure (`failed`, `plugin_action_failed`).
 
 **A shell command ran in the wrong directory.** `cwd: "focused"` uses the pane
 that was focused when you pressed the key. If herdr reported no cwd for it, the

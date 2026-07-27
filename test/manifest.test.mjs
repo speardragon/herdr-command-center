@@ -85,7 +85,7 @@ test('both READMEs state the version floors the manifest enforces', async () => 
 test('both READMEs document every config field and the migration', async () => {
   for (const name of ['README.md', 'README.ko.md']) {
     const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
-    for (const field of ['schema_version', 'editor', 'label', 'plugin_action', 'focused', 'workspace', 'description']) {
+    for (const field of ['schema_version', 'editor', 'slot', 'label', 'shell', 'pane', 'plugin_action', 'focused', 'workspace', 'description']) {
       assert.ok(text.includes(field), `${name} does not document ${field}`);
     }
     assert.ok(text.includes('[[commands]]'), `${name} does not show the TOML block shape`);
@@ -97,12 +97,22 @@ test('both READMEs document every config field and the migration', async () => {
   }
 });
 
+test('both READMEs document the uppercase action keys', async () => {
+  for (const name of ['README.md', 'README.ko.md']) {
+    const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
+    for (const key of ['`A`', '`E`', '`D`', '`O`', '`I`']) {
+      assert.ok(text.includes(key), `${name} does not document the ${key} action`);
+    }
+    assert.ok(!text.includes('1-9 run'), `${name} still describes the old numeric badges`);
+  }
+});
+
 test('every screenshot the READMEs reference exists and is described', async () => {
   const referenced = new Set();
   for (const name of ['README.md', 'README.ko.md']) {
     const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
     const images = [...text.matchAll(/!\[([^\]]*)\]\((docs\/[^)]+\.png)\)/gu)];
-    assert.equal(images.length, 3, `${name} references ${images.length} screenshots, expected 3`);
+    assert.equal(images.length, 4, `${name} references ${images.length} screenshots, expected 4`);
     for (const [, alt, path] of images) {
       // alt text is the only description a screen reader gets
       assert.ok(alt.trim().length > 0, `${name} has an image with no alt text: ${path}`);
@@ -111,14 +121,14 @@ test('every screenshot the READMEs reference exists and is described', async () 
     }
   }
   // both languages must show the same views, or one reader is shown less
-  assert.equal(referenced.size, 3, `READMEs disagree on which screenshots to show: ${[...referenced]}`);
+  assert.equal(referenced.size, 4, `READMEs disagree on which screenshots to show: ${[...referenced]}`);
 });
 
 test('the screenshots are reproducible rather than hand-taken', async () => {
   await access(new URL('../tools/screenshots.py', import.meta.url), constants.R_OK);
   const tool = await readFile(new URL('../tools/screenshots.py', import.meta.url), 'utf8');
   assert.match(tool, /bin\/popup\.mjs/u, 'the generator must drive the real popup');
-  for (const name of ['popup-list', 'popup-form', 'popup-error']) {
+  for (const name of ['popup-list', 'popup-form', 'popup-error', 'popup-import']) {
     assert.ok(tool.includes(name), `the generator does not produce ${name}`);
   }
 });
