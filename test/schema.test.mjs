@@ -5,7 +5,6 @@ import {
   COMMAND_TYPES,
   CWD_MODES,
   ConfigError,
-  DEFAULT_EDITOR,
   defaultConfig,
   MAX_COMMANDS,
   nextFreeSlot,
@@ -22,7 +21,6 @@ test('exported vocabularies are frozen and complete', () => {
   assert.equal(SCHEMA_VERSION, 1);
   assert.deepEqual([...COMMAND_TYPES], ['shell', 'plugin_action']);
   assert.deepEqual([...CWD_MODES], ['focused', 'workspace']);
-  assert.deepEqual([...DEFAULT_EDITOR], ['code']);
   assert.ok(Object.isFrozen(COMMAND_TYPES));
 });
 
@@ -145,13 +143,18 @@ test('normalizeCommand rejects a multi-line command', () => {
 test('defaultConfig is valid and normalizes to itself', () => {
   const doc = defaultConfig();
   assert.equal(doc.schema_version, 1);
-  assert.deepEqual(doc.editor, ['code']);
+  assert.deepEqual(doc.editor, []);
   assert.ok(doc.commands.length >= 1);
   assert.deepEqual(normalizeConfig(doc), doc);
 });
 
 test('normalizeConfig fills missing schema_version, editor, and commands', () => {
-  assert.deepEqual(normalizeConfig({}), { schema_version: 1, editor: ['code'], commands: [] });
+  assert.deepEqual(normalizeConfig({}), { schema_version: 1, editor: [], commands: [] });
+});
+
+test('an empty editor list means auto-detect rather than an error', () => {
+  assert.deepEqual(normalizeConfig({ editor: [] }).editor, []);
+  assert.deepEqual(normalizeConfig({}).editor, []);
 });
 
 test('normalizeConfig assigns unique ids across the whole list', () => {
@@ -176,9 +179,6 @@ test('normalizeConfig rejects unsupported shapes and versions', () => {
   assert.throws(() => normalizeConfig([]), ConfigError);
   assert.throws(() => normalizeConfig({ schema_version: 2 }), (error) => (
     error instanceof ConfigError && /schema_version/u.test(error.message)
-  ));
-  assert.throws(() => normalizeConfig({ editor: [] }), (error) => (
-    error instanceof ConfigError && /editor/u.test(error.message)
   ));
   assert.throws(() => normalizeConfig({ editor: 'code' }), ConfigError);
   assert.throws(() => normalizeConfig({ commands: {} }), ConfigError);

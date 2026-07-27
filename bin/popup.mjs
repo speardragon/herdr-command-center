@@ -11,12 +11,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { readContext } from '../src/context.mjs';
+import { resolveEditors } from '../src/editor.mjs';
 import { createKeyDecoder } from '../src/keys.mjs';
 import { commandsPath, resolveConfigDir, resolveStateDir, runLogPath } from '../src/paths.mjs';
 import { gridColumns, renderView, textCursor } from '../src/render.mjs';
-import { ConfigError, DEFAULT_EDITOR } from '../src/schema.mjs';
+import { ConfigError } from '../src/schema.mjs';
 import { ensureStore, saveStore } from '../src/store.mjs';
-import { createView, reduceKey } from '../src/view.mjs';
+import { beginEditorPick, createView, reduceKey } from '../src/view.mjs';
 
 const execFileAsync = promisify(execFileCallback);
 
@@ -91,7 +92,7 @@ export async function runPopup({
     // A broken config must still give the user a way to fix it, so keep a
     // minimal usable doc (for `editor`) and show the reason.
     view = createView({
-      doc: { schema_version: 1, editor: [...DEFAULT_EDITOR], commands: [] },
+      doc: { schema_version: 1, editor: [], commands: [] },
       error: error.message,
     });
   }
@@ -146,7 +147,6 @@ export async function runPopup({
         COMMAND_CENTER_TASK_JSON: JSON.stringify({
           ...task,
           context,
-          editor: view.doc.editor,
           commandsPath: commandsFile,
           logPath: logFile,
         }),
@@ -183,8 +183,27 @@ export async function runPopup({
           return 0;
         }
         if (effect.type === 'open-config') {
-          spawnRunner({ kind: 'open-config' });
-          return 0;
+          const editor = effect.editor
+            ?? (() => {
+              const candidates = resolveEditors(view.doc, { env });
+              return candidates.length === 1 ? candidates[0] : null;
+            })();
+          if (editor) {
+            spawnRunner({ kind: 'open-config', editor });
+            return 0;
+          }
+          const candidates = resolveEditors(view.doc, { env });
+          if (candidates.length === 0) {
+            view = createView({
+              doc: view.doc,
+              error: 'no editor found; set editor = ["your-editor"] in commands.toml, or $EDITOR',
+            });
+            draw();
+            continue;
+          }
+          view = beginEditorPick(view, candidates);
+          draw();
+          continue;
         }
         if (effect.type === 'save') {
           try {

@@ -8,10 +8,9 @@ import { realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { openInEditor } from '../src/editor.mjs';
+import { openInEditor, resolveEditors } from '../src/editor.mjs';
 import { createLogger as createDefaultLogger } from '../src/logger.mjs';
 import { commandsPath, resolveConfigDir, resolveStateDir, runLogPath } from '../src/paths.mjs';
-import { DEFAULT_EDITOR } from '../src/schema.mjs';
 import { loadStore } from '../src/store.mjs';
 
 const execFileAsync = promisify(execFileCallback);
@@ -38,17 +37,34 @@ export async function editConfig({
   const logger = createLogger(runLogPath(resolveStateDir(configDir, env)));
 
   // A broken or absent file is exactly when the user most needs the editor, so
-  // fall back to the default editor rather than refusing to open.
-  let editor = [...DEFAULT_EDITOR];
+  // fall back to an empty editor list (auto-detect) rather than refusing to open.
+  let doc = { editor: [] };
   try {
     const loaded = await loadStore(commandsFile);
-    editor = loaded.doc.editor;
+    doc = loaded.doc;
   } catch {
     await logger.write('edit-config-fallback-editor', { path: commandsFile });
   }
 
+  const candidates = resolveEditors(doc, { env });
+  if (candidates.length === 0) {
+    await logger.write('failed', { message: 'no editor found' });
+    try {
+      stderr.write('command-center: no editor found; set editor = ["your-editor"] in commands.toml, or $EDITOR\n');
+    } catch {
+      // The exit code still reports the failure.
+    }
+    return 1;
+  }
+  // There is no popup here to ask which candidate to use, so take the first
+  // and log that a choice was made rather than silently picking one.
+  const editor = candidates[0];
+  if (candidates.length > 1) {
+    await logger.write('edit-config-multiple-editors', { editor, candidates });
+  }
+
   try {
-    await openInEditor(commandsFile, { editor, spawn, env, log: logger.write });
+    await openInEditor(commandsFile, { editor, spawn, env, shell: env.SHELL, log: logger.write });
     return 0;
   } catch (error) {
     await logger.write('failed', { message: error?.message ?? 'unknown failure' });

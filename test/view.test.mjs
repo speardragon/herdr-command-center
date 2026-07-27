@@ -25,7 +25,7 @@ function press(view, ...keys) {
 }
 
 test('exports the mode and field vocabularies', () => {
-  assert.deepEqual([...MODES], ['list', 'form', 'confirm-delete', 'error', 'import']);
+  assert.deepEqual([...MODES], ['list', 'form', 'confirm-delete', 'error', 'import', 'editor-pick']);
   assert.deepEqual([...FORM_FIELDS], ['label', 'slot', 'type', 'command', 'cwd', 'description']);
   assert.deepEqual([...CHOICE_FIELDS].sort(), ['cwd', 'slot', 'type']);
 });

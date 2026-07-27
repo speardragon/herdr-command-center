@@ -17,7 +17,7 @@ function task(overrides = {}) {
     kind: 'run',
     command: COMMAND,
     context: { focusedPaneCwd: '/Users/cdragon/repo', workspaceCwd: '/Users/cdragon' },
-    editor: ['code'],
+    editor: 'code',
     commandsPath: '/tmp/cc/commands.json',
     logPath: '/tmp/cc/state/run.log',
     ...overrides,
@@ -108,12 +108,13 @@ test('runPending opens the config file for an open-config task', async () => {
     env: {
       COMMAND_CENTER_TASK_JSON: JSON.stringify(task({ kind: 'open-config', command: undefined })),
       COMMAND_CENTER_POPUP_PID: '4242',
+      SHELL: '/bin/zsh',
     },
   });
   assert.equal(await runPending(options), 0);
   assert.equal(spawns.length, 1);
-  assert.equal(spawns[0].file, 'code');
-  assert.deepEqual(spawns[0].args, ['/tmp/cc/commands.json']);
+  assert.equal(spawns[0].file, '/bin/zsh');
+  assert.equal(spawns[0].args[1], 'code "$1"');
 });
 
 test('runPending waits for the popup before opening the editor too', async () => {
@@ -169,8 +170,8 @@ test('runPending returns 2 when the paths or editor are unusable', async () => {
   for (const overrides of [
     { commandsPath: 'relative/commands.json' },
     { logPath: 'relative/run.log' },
-    { editor: [] },
-    { editor: 'code' },
+    { kind: 'open-config', command: undefined, editor: '' },
+    { kind: 'open-config', command: undefined, editor: ['code'] },
   ]) {
     const { options } = deps({
       env: {

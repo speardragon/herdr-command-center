@@ -40,17 +40,11 @@ function parseTask(raw) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   if (!TASK_KINDS.has(value.kind)) return null;
   if (!usablePath(value.commandsPath) || !usablePath(value.logPath)) return null;
-  if (
-    !Array.isArray(value.editor)
-    || value.editor.length === 0
-    || value.editor.some((entry) => typeof entry !== 'string' || entry.length === 0)
-  ) {
-    return null;
-  }
   const context = value.context && typeof value.context === 'object' && !Array.isArray(value.context)
     ? value.context
     : {};
   if (value.kind === 'open-config') {
+    if (typeof value.editor !== 'string' || value.editor.trim().length === 0) return null;
     return { ...value, context, command: null };
   }
   let command;
@@ -87,6 +81,7 @@ export async function runPending({
     if (task.kind === 'open-config') {
       await openInEditor(task.commandsPath, {
         editor: task.editor,
+        shell: env.SHELL,
         spawn,
         env,
         log: logger.write,

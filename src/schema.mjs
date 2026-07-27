@@ -3,7 +3,6 @@ import { isAbsolute } from 'node:path';
 export const SCHEMA_VERSION = 1;
 export const COMMAND_TYPES = Object.freeze(['shell', 'plugin_action']);
 export const CWD_MODES = Object.freeze(['focused', 'workspace']);
-export const DEFAULT_EDITOR = Object.freeze(['code']);
 
 const MAX_LABEL_LENGTH = 80;
 const MAX_COMMAND_LENGTH = 2_000;
@@ -138,10 +137,12 @@ export function normalizeCommand(value, { existingIds = [], existingSlots = [] }
 }
 
 function normalizeEditor(value) {
-  if (value === undefined || value === null) return [...DEFAULT_EDITOR];
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_EDITOR_ARGS) {
-    throw new ConfigError(`editor must be an array of 1 to ${MAX_EDITOR_ARGS} strings`);
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MAX_EDITOR_ARGS) {
+    throw new ConfigError(`editor must be an array of at most ${MAX_EDITOR_ARGS} command lines`);
   }
+  // Each entry is one candidate command line. An empty list means "auto-detect",
+  // which is why it is allowed here.
   return value.map((entry, index) => requireText(entry, `editor[${index}]`, 512));
 }
 
@@ -185,7 +186,7 @@ export function normalizeConfig(value) {
 export function defaultConfig() {
   return {
     schema_version: SCHEMA_VERSION,
-    editor: [...DEFAULT_EDITOR],
+    editor: [],
     commands: [
       {
         id: 'open-in-vs-code',

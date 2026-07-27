@@ -1,6 +1,6 @@
 import { COMMAND_TYPES, ConfigError, CWD_MODES, normalizeCommand, SLOT_KEYS } from './schema.mjs';
 
-export const MODES = Object.freeze(['list', 'form', 'confirm-delete', 'error', 'import']);
+export const MODES = Object.freeze(['list', 'form', 'confirm-delete', 'error', 'import', 'editor-pick']);
 export const FORM_FIELDS = Object.freeze(['label', 'slot', 'type', 'command', 'cwd', 'description']);
 export const CHOICE_FIELDS = Object.freeze(new Set(['slot', 'type', 'cwd']));
 export const CHOICE_VALUES = Object.freeze({ type: COMMAND_TYPES, cwd: CWD_MODES });
@@ -72,8 +72,37 @@ export function createView({ doc, error = null, cursor = 0 } = {}) {
     cursor: clampCursor(cursor, doc.commands?.length ?? 0),
     form: null,
     importCursor: 0,
+    editorChoices: [],
+    editorCursor: 0,
     effect: null,
   };
+}
+
+// The reducer does no I/O, so the popup resolves the candidate list and hands it
+// in. One candidate never reaches this mode: the popup just opens it.
+export function beginEditorPick(view, candidates) {
+  return {
+    ...view,
+    mode: 'editor-pick',
+    editorChoices: [...candidates],
+    editorCursor: 0,
+    effect: null,
+  };
+}
+
+function reduceEditorPick(view, key) {
+  const choices = view.editorChoices ?? [];
+  if (key === 'escape') return { ...view, mode: 'list', editorChoices: [], editorCursor: 0 };
+  if (key === 'up') return { ...view, editorCursor: step(view.editorCursor, -1, choices.length) };
+  if (key === 'down') return { ...view, editorCursor: step(view.editorCursor, 1, choices.length) };
+  const chosen = (index) => {
+    const editor = choices[index];
+    if (!editor) return view;
+    return { ...view, mode: 'list', effect: { type: 'open-config', editor } };
+  };
+  if (key === 'enter') return chosen(view.editorCursor);
+  if (/^[1-9]$/u.test(key)) return chosen(Number(key) - 1);
+  return view;
 }
 
 function reduceError(view, key) {
@@ -228,6 +257,7 @@ export function reduceKey(view, key, { columns = 1 } = {}) {
   if (key === 'interrupt') return { ...cleared, effect: { type: 'close' } };
   if (cleared.mode === 'error') return reduceError(cleared, key);
   if (cleared.mode === 'confirm-delete') return reduceConfirm(cleared, key);
+  if (cleared.mode === 'editor-pick') return reduceEditorPick(cleared, key);
   if (cleared.mode === 'form') return reduceForm(cleared, key);
   return reduceList(cleared, key, columns);
 }

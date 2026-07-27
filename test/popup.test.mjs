@@ -129,7 +129,7 @@ test('enter hands the selected command to the detached runner and returns', asyn
   assert.equal(spawns[0].options.shell, false);
 });
 
-test('the runner task carries the command, context, editor, and both paths', async () => {
+test('the runner task carries the command, context, and both paths', async () => {
   const { dir, file } = await scratch();
   const { spawns } = await harness(['\r'], { dir });
   const task = taskFrom(spawns[0]);
@@ -137,7 +137,8 @@ test('the runner task carries the command, context, editor, and both paths', asy
   assert.equal(task.command.id, 'open-in-vs-code');
   assert.equal(task.command.command, 'code .');
   assert.deepEqual(task.context, CONTEXT);
-  assert.deepEqual(task.editor, ['code']);
+  // A 'run' task never needs an editor; only 'open-config' carries one.
+  assert.equal(task.editor, undefined);
   assert.equal(task.commandsPath, file);
   assert.equal(task.logPath, join(dir, 'state', 'run.log'));
 });
@@ -162,25 +163,74 @@ test('a digit hands the badged command to the runner', async () => {
   assert.equal(taskFrom(spawns[0]).command.id, 'open-pull-request');
 });
 
-test('O hands an open-config task to the runner', async () => {
+test('O hands an open-config task to the runner when exactly one editor is found', async () => {
   const { dir, file } = await scratch();
-  const { code, spawns } = await harness(['O'], { dir });
+  const { code, spawns } = await harness(['O'], { dir, extraEnv: { EDITOR: 'code' } });
   assert.equal(code, 0);
   const task = taskFrom(spawns[0]);
   assert.equal(task.kind, 'open-config');
   assert.equal(task.command, undefined);
   assert.equal(task.commandsPath, file);
-  assert.deepEqual(task.editor, ['code']);
+  assert.equal(task.editor, 'code');
 });
 
-test('O forwards a custom editor from commands.toml', async () => {
+test('O forwards a single custom editor candidate from commands.toml', async () => {
   const { dir, file } = await scratch();
   await writeFile(file, renderConfigToml(normalizeConfig({
-    editor: ['code', '--new-window'],
+    editor: ['code --new-window'],
     commands: [],
   })), 'utf8');
   const { spawns } = await harness(['O'], { dir });
-  assert.deepEqual(taskFrom(spawns[0]).editor, ['code', '--new-window']);
+  assert.equal(taskFrom(spawns[0]).editor, 'code --new-window');
+});
+
+test('O opens a picker when commands.toml names several editor candidates', async () => {
+  const { dir, file } = await scratch();
+  await writeFile(file, renderConfigToml(normalizeConfig({
+    editor: ['code', 'vim'],
+    commands: [],
+  })), 'utf8');
+  const { spawns, stdout } = await harness(['O'], { dir });
+  // No candidate is spawned yet: the popup is waiting on a pick.
+  assert.deepEqual(spawns, []);
+  assert.match(stdout.lastFrame, /Open commands\.toml with/u);
+  assert.match(stdout.lastFrame, /1\. code/u);
+  assert.match(stdout.lastFrame, /2\. vim/u);
+  void file;
+});
+
+test('choosing a candidate from the editor picker hands it to the runner', async () => {
+  const { dir, file } = await scratch();
+  await writeFile(file, renderConfigToml(normalizeConfig({
+    editor: ['code', 'vim'],
+    commands: [],
+  })), 'utf8');
+  const { code, spawns } = await harness(['O', '2'], { dir });
+  assert.equal(code, 0);
+  const task = taskFrom(spawns[0]);
+  assert.equal(task.kind, 'open-config');
+  assert.equal(task.editor, 'vim');
+  assert.equal(task.commandsPath, file);
+});
+
+test('escape backs out of the editor picker without spawning', async () => {
+  const { dir } = await scratch();
+  await writeFile(join(dir, 'commands.toml'), renderConfigToml(normalizeConfig({
+    editor: ['code', 'vim'],
+    commands: [],
+  })), 'utf8');
+  const { code, spawns } = await harness(['O', '\u001b', '\u001b'], { dir });
+  assert.equal(code, 0);
+  assert.deepEqual(spawns, []);
+});
+
+test('O reports failure when no editor can be found at all', async () => {
+  const { dir } = await scratch();
+  const { code, spawns, stdout } = await harness(['O'], { dir });
+  // No key follows the failed pick, so input ends before a decision is made.
+  assert.equal(code, 1);
+  assert.deepEqual(spawns, []);
+  assert.match(stdout.lastFrame, /no editor found/u);
 });
 
 test('adding a command writes commands.toml and keeps the popup open', async () => {
@@ -226,12 +276,12 @@ test('editing a command rewrites it in place', async () => {
 test('an invalid commands.toml opens in error mode and still offers the editor', async () => {
   const { dir, file } = await scratch();
   await writeFile(file, '[[commands]]\nlabel = ', 'utf8');
-  const { code, spawns, stdout } = await harness(['o'], { dir });
+  const { code, spawns, stdout } = await harness(['o'], { dir, extraEnv: { EDITOR: 'code' } });
   assert.equal(code, 0);
   assert.match(stdout.frames[0], /config error/u);
   assert.match(stdout.frames[0], /not valid TOML/u);
   assert.equal(taskFrom(spawns[0]).kind, 'open-config');
-  assert.deepEqual(taskFrom(spawns[0]).editor, ['code']);
+  assert.equal(taskFrom(spawns[0]).editor, 'code');
 });
 
 test('an invalid commands.toml is never overwritten by the popup', async () => {

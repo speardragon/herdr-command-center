@@ -107,12 +107,12 @@ test('openPalette reports a generic failure', async () => {
 test('editConfig opens commands.toml with the configured editor', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cc-action-'));
   await writeFile(join(dir, 'commands.toml'), renderConfigToml(normalizeConfig({
-    editor: ['code', '-g'],
+    editor: ['code -g'],
     commands: [],
   })), 'utf8');
   const spawns = [];
   const code = await editConfig({
-    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },
+    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state'), SHELL: '/bin/zsh' },
     execFile: async () => { throw new Error('execFile must not be needed'); },
     spawn: (file, args, options) => {
       spawns.push({ file, args, options });
@@ -121,16 +121,42 @@ test('editConfig opens commands.toml with the configured editor', async () => {
   });
   assert.equal(code, 0);
   assert.equal(spawns.length, 1);
-  assert.equal(spawns[0].file, 'code');
-  assert.deepEqual(spawns[0].args, ['-g', join(dir, 'commands.toml')]);
+  assert.equal(spawns[0].file, '/bin/zsh');
+  assert.deepEqual(spawns[0].args, ['-lc', 'code -g "$1"', 'cc-editor', join(dir, 'commands.toml')]);
   assert.equal(spawns[0].options.detached, true);
+});
+
+test('editConfig picks the first candidate and logs it when several are configured', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-action-'));
+  await writeFile(join(dir, 'commands.toml'), renderConfigToml(normalizeConfig({
+    editor: ['code', 'vim'],
+    commands: [],
+  })), 'utf8');
+  const events = [];
+  const spawns = [];
+  const code = await editConfig({
+    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },
+    execFile: async () => { throw new Error('execFile must not be needed'); },
+    spawn: (file, args, options) => {
+      spawns.push({ file, args, options });
+      return { unref: () => {} };
+    },
+    createLogger: () => ({ write: async (event, detail) => { events.push([event, detail]); } }),
+  });
+  assert.equal(code, 0);
+  assert.equal(spawns.length, 1, 'there is no popup to ask, so it just picks one');
+  assert.equal(spawns[0].args[1], 'code "$1"');
+  assert.ok(
+    events.some(([event, detail]) => event === 'edit-config-multiple-editors' && detail.editor === 'code'),
+    'it logs that a choice among several candidates was made',
+  );
 });
 
 test('editConfig seeds nothing but still opens a file that does not exist yet', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cc-action-'));
   const spawns = [];
   const code = await editConfig({
-    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },
+    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state'), EDITOR: 'code' },
     execFile: async () => {},
     spawn: (file, args) => {
       spawns.push({ file, args });
@@ -138,16 +164,16 @@ test('editConfig seeds nothing but still opens a file that does not exist yet', 
     },
   });
   assert.equal(code, 0);
-  assert.equal(spawns[0].file, 'code');
-  assert.deepEqual(spawns[0].args, [join(dir, 'commands.toml')]);
+  assert.equal(spawns[0].file, '/bin/sh');
+  assert.deepEqual(spawns[0].args, ['-lc', 'code "$1"', 'cc-editor', join(dir, 'commands.toml')]);
 });
 
-test('editConfig falls back to the default editor when the file is broken', async () => {
+test('editConfig falls back to auto-detection when the file is broken', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cc-action-'));
   await writeFile(join(dir, 'commands.toml'), '[[commands]]\nlabel = ', 'utf8');
   const spawns = [];
   const code = await editConfig({
-    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },
+    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state'), EDITOR: 'code' },
     execFile: async () => {},
     spawn: (file, args) => {
       spawns.push({ file, args });
@@ -155,7 +181,20 @@ test('editConfig falls back to the default editor when the file is broken', asyn
     },
   });
   assert.equal(code, 0);
-  assert.equal(spawns[0].file, 'code');
+  assert.equal(spawns[0].args[1], 'code "$1"');
+});
+
+test('editConfig reports failure when no editor can be found at all', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-action-'));
+  const stderr = stderrSink();
+  const code = await editConfig({
+    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },
+    stderr,
+    execFile: async () => {},
+    spawn: () => { throw new Error('must not spawn'); },
+  });
+  assert.equal(code, 1);
+  assert.match(stderr.lines.join(''), /no editor found/u);
 });
 
 test('editConfig reports an unresolvable config directory', async () => {
@@ -174,7 +213,7 @@ test('editConfig reports a missing editor binary', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cc-action-'));
   const stderr = stderrSink();
   const code = await editConfig({
-    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },
+    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state'), EDITOR: 'code' },
     stderr,
     execFile: async () => {},
     spawn: () => { throw new Error('spawn code ENOENT'); },

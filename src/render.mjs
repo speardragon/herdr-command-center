@@ -14,6 +14,7 @@ const LIST_FOOTER = '↑↓←→ move · enter run · slot key runs · A add ·
 const FORM_FOOTER = 'type to edit · tab/↑↓ field · ←→ change · enter save · esc cancel';
 const CONFIRM_FOOTER = 'y delete · any other key cancels';
 const ERROR_FOOTER = 'o edit file · esc close';
+const EDITOR_FOOTER = '↑↓ move · enter open · 1-9 open · esc cancel';
 
 const FIELD_LABELS = Object.freeze({
   label: 'Label',
@@ -143,11 +144,23 @@ function errorBody(view, width, budget, color) {
   ].slice(0, Math.max(1, budget));
 }
 
+function editorPickBody(view, width, budget, color) {
+  const title = clipLine('Command Center · Open commands.toml with', width);
+  const lines = [color ? styles.bold(title) : title, ''];
+  (view.editorChoices ?? []).forEach((editor, index) => {
+    const marker = index === view.editorCursor ? '›' : ' ';
+    const line = clipLine(`${marker} ${index + 1}. ${editor}`, width);
+    lines.push(color && index === view.editorCursor ? styles.bold(styles.cyan(line)) : line);
+  });
+  return lines.slice(0, Math.max(1, budget));
+}
+
 const BODIES = Object.freeze({
   list: listBody,
   form: formBody,
   'confirm-delete': confirmBody,
   error: errorBody,
+  'editor-pick': editorPickBody,
 });
 
 const FOOTERS = Object.freeze({
@@ -155,6 +168,7 @@ const FOOTERS = Object.freeze({
   form: FORM_FOOTER,
   'confirm-delete': CONFIRM_FOOTER,
   error: ERROR_FOOTER,
+  'editor-pick': EDITOR_FOOTER,
 });
 
 export function renderLines(view, size = {}) {
