@@ -171,7 +171,7 @@ test('error mode shows the config error and only its own keys', () => {
   const text = renderView(view, SIZE);
   assert.match(text, /Command Center · config error/u);
   assert.match(text, /commands\.toml is not valid JSON/u);
-  assert.match(text, /o edit file/u);
+  assert.match(text, /O edit file/u);
   assert.ok(!text.includes('a add'));
 });
 

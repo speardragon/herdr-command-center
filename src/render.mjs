@@ -13,7 +13,7 @@ const PADDING_Y = 1;
 const LIST_FOOTER = '↑↓←→ move · enter run · slot key runs · A add · E edit · D delete · O edit file · I import · esc close';
 const FORM_FOOTER = 'type to edit · tab/↑↓ field · ←→ change · enter save · esc cancel';
 const CONFIRM_FOOTER = 'y delete · any other key cancels';
-const ERROR_FOOTER = 'o edit file · esc close';
+const ERROR_FOOTER = 'O edit file · esc close';
 const EDITOR_FOOTER = '↑↓ move · enter open · 1-9 open · esc cancel';
 const IMPORT_FOOTER = '↑↓ move · enter set up · esc cancel';
 

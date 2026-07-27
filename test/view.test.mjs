@@ -306,6 +306,13 @@ test('error mode only offers open-config and close', () => {
   assert.equal(reduceKey(view, 'a').mode, 'error');
 });
 
+test('error mode accepts the uppercase action the list teaches', () => {
+  const view = createView({ doc: doc(), error: 'broken' });
+  assert.deepEqual(reduceKey(view, 'O').effect, { type: 'open-config' });
+  // lowercase kept working: no slots exist in this mode to collide with
+  assert.deepEqual(reduceKey(view, 'o').effect, { type: 'open-config' });
+});
+
 test('reduceKey never mutates the view it was given', () => {
   const view = createView({ doc: doc() });
   const snapshot = JSON.parse(JSON.stringify({ ...view, doc: view.doc }));

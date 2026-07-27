@@ -157,7 +157,10 @@ function reduceEditorPick(view, key) {
 }
 
 function reduceError(view, key) {
-  if (key === 'o') return { ...view, effect: { type: 'open-config' } };
+  // The list teaches "uppercase acts", so O must work here too. Lowercase o still
+  // works because this mode has no slots to collide with, and someone who learned
+  // the old key should not be stuck staring at a broken config.
+  if (key === 'O' || key === 'o') return { ...view, effect: { type: 'open-config' } };
   if (key === 'escape' || key === 'q') return { ...view, effect: { type: 'close' } };
   return view;
 }
