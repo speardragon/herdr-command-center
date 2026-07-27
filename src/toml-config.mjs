@@ -4,7 +4,7 @@ import { ConfigError } from './schema.mjs';
 
 // Key order is fixed so a block the popup rewrites still reads like the ones the
 // user wrote by hand.
-const COMMAND_KEYS = Object.freeze(['id', 'label', 'type', 'command', 'cwd', 'description']);
+const COMMAND_KEYS = Object.freeze(['id', 'slot', 'label', 'type', 'command', 'cwd', 'description']);
 const SIMPLE_ESCAPES = Object.freeze({
   '\\': '\\\\',
   '"': '\\"',

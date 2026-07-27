@@ -90,7 +90,7 @@ test('runPopup seeds commands.toml on first open and draws the list', async () =
   assert.equal(code, 0);
   assert.equal(await readFile(file, 'utf8'), renderConfigToml(defaultConfig()));
   assert.match(stdout.lastFrame, /Command Center · 3 commands/u);
-  assert.match(stdout.lastFrame, /1\. Open in VS Code/u);
+  assert.match(stdout.lastFrame, /1 {2}Open in VS Code/u);
 });
 
 test('runPopup enters and restores raw mode', async () => {
@@ -162,9 +162,9 @@ test('a digit hands the badged command to the runner', async () => {
   assert.equal(taskFrom(spawns[0]).command.id, 'open-pull-request');
 });
 
-test('o hands an open-config task to the runner', async () => {
+test('O hands an open-config task to the runner', async () => {
   const { dir, file } = await scratch();
-  const { code, spawns } = await harness(['o'], { dir });
+  const { code, spawns } = await harness(['O'], { dir });
   assert.equal(code, 0);
   const task = taskFrom(spawns[0]);
   assert.equal(task.kind, 'open-config');
@@ -173,39 +173,39 @@ test('o hands an open-config task to the runner', async () => {
   assert.deepEqual(task.editor, ['code']);
 });
 
-test('o forwards a custom editor from commands.toml', async () => {
+test('O forwards a custom editor from commands.toml', async () => {
   const { dir, file } = await scratch();
   await writeFile(file, renderConfigToml(normalizeConfig({
     editor: ['code', '--new-window'],
     commands: [],
   })), 'utf8');
-  const { spawns } = await harness(['o'], { dir });
+  const { spawns } = await harness(['O'], { dir });
   assert.deepEqual(taskFrom(spawns[0]).editor, ['code', '--new-window']);
 });
 
 test('adding a command writes commands.toml and keeps the popup open', async () => {
   const { dir, file } = await scratch();
-  const { code, spawns, stdout } = await harness(['a', 'Tidy', '\t\t', 'ls', '\r', '\u001b'], { dir });
+  const { code, spawns, stdout } = await harness(['A', 'Tidy', '\t\t\t', 'ls', '\r', '\u001b'], { dir });
   assert.equal(code, 0);
   assert.deepEqual(spawns, [], 'saving must not spawn the runner');
   const written = normalizeConfig(parseConfigToml(await readFile(file, 'utf8')));
   assert.equal(written.commands.length, 4);
   assert.deepEqual(written.commands[3], {
-    id: 'tidy', label: 'Tidy', type: 'shell', command: 'ls', cwd: 'focused', description: '',
+    id: 'tidy', slot: '4', label: 'Tidy', type: 'shell', command: 'ls', cwd: 'focused', description: '',
   });
   assert.match(stdout.lastFrame, /4 commands/u);
 });
 
 test('a saved command is immediately runnable in the same session', async () => {
   const { dir } = await scratch();
-  const { spawns } = await harness(['a', 'Tidy', '\t\t', 'ls', '\r', '4'], { dir });
+  const { spawns } = await harness(['A', 'Tidy', '\t\t\t', 'ls', '\r', '4'], { dir });
   assert.equal(spawns.length, 1);
   assert.equal(taskFrom(spawns[0]).command.id, 'tidy');
 });
 
 test('deleting a command rewrites commands.toml', async () => {
   const { dir, file } = await scratch();
-  const { code } = await harness(['d', 'y', '\u001b'], { dir });
+  const { code } = await harness(['D', 'y', '\u001b'], { dir });
   assert.equal(code, 0);
   const written = normalizeConfig(parseConfigToml(await readFile(file, 'utf8')));
   assert.deepEqual(written.commands.map((command) => command.id), [
@@ -216,7 +216,7 @@ test('deleting a command rewrites commands.toml', async () => {
 
 test('editing a command rewrites it in place', async () => {
   const { dir, file } = await scratch();
-  const { code } = await harness(['e', '\u007f\u007f\u007f\u007f', 'Kod', '\r', '\u001b'], { dir });
+  const { code } = await harness(['E', '\u007f\u007f\u007f\u007f', 'Kod', '\r', '\u001b'], { dir });
   assert.equal(code, 0);
   const written = normalizeConfig(parseConfigToml(await readFile(file, 'utf8')));
   assert.equal(written.commands[0].id, 'open-in-vs-code');
@@ -243,7 +243,7 @@ test('an invalid commands.toml is never overwritten by the popup', async () => {
 
 test('a save that collides with an external edit switches to error mode', async () => {
   const { dir, file } = await scratch();
-  const stdin = createFakeStdin(['a'], { endAfterQueue: false });
+  const stdin = createFakeStdin(['A'], { endAfterQueue: false });
   const stdout = createFakeStdout();
   const pending = runPopup({
     env: {
@@ -262,7 +262,7 @@ test('a save that collides with an external edit switches to error mode', async 
   // Let the popup finish loading and enter the form, then edit the file behind it.
   await new Promise((resolve) => { setTimeout(resolve, 50); });
   await writeFile(file, renderConfigToml(normalizeConfig({ editor: ['code'], commands: [] })), 'utf8');
-  stdin.push('Tidy\t\tls\r');
+  stdin.push('Tidy\t\t\tls\r');
   await new Promise((resolve) => { setTimeout(resolve, 50); });
   stdin.push('\u001b');
   assert.equal(await pending, 0);
@@ -357,7 +357,7 @@ test('a resize redraws at the new size', async () => {
 
 test('the popup parks a blinking cursor on a focused text field', async () => {
   const { dir } = await scratch();
-  const { stdout } = await harness(['a'], { dir });
+  const { stdout } = await harness(['A'], { dir });
   const form = stdout.frames.filter((frame) => frame.includes('Add command')).at(-1);
   assert.ok(form.includes('\u001b[?25h'), 'the cursor is shown');
   assert.ok(form.includes('\u001b[5 q'), 'a blinking bar is requested');
@@ -367,7 +367,7 @@ test('the popup parks a blinking cursor on a focused text field', async () => {
 
 test('the popup keeps the cursor hidden where nothing is editable', async () => {
   const { dir } = await scratch();
-  const { stdout } = await harness(['a'], { dir });
+  const { stdout } = await harness(['A'], { dir });
   const list = stdout.frames.find((frame) => frame.includes('3 commands'));
   assert.ok(list.includes('\u001b[?25l'), 'the cursor is hidden');
   assert.ok(!list.includes('\u001b[?25h'), 'and never shown again in that frame');
@@ -375,9 +375,9 @@ test('the popup keeps the cursor hidden where nothing is editable', async () => 
 
 test('the popup hides the cursor again on a choice field', async () => {
   const { dir } = await scratch();
-  const { stdout } = await harness(['a', '\t'], { dir });
+  const { stdout } = await harness(['A', '\t'], { dir });
   const type = stdout.frames.filter((frame) => frame.includes('Add command')).at(-1);
-  assert.ok(!type.includes('\u001b[?25h'), 'Type takes arrows, not typing');
+  assert.ok(!type.includes('\u001b[?25h'), 'Slot takes arrows, not typing');
 });
 
 test('the popup leaves the terminal with a visible default cursor', async () => {

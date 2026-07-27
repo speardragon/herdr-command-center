@@ -18,8 +18,8 @@ command = ["npm", "test"]
 id = "palette"
 title = "Command Center"
 placement = "popup"
-width = 88
-height = 24
+width = "90%"
+height = "80%"
 command = ["node", "bin/popup.mjs"]
 
 [[actions]]

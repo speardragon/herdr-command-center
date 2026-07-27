@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { SLOT_KEYS } from '../src/schema.mjs';
 import { CHOICE_FIELDS, createView, FORM_FIELDS, MODES, reduceKey } from '../src/view.mjs';
 
 function doc(labels = ['One', 'Two', 'Three']) {
@@ -9,6 +10,7 @@ function doc(labels = ['One', 'Two', 'Three']) {
     editor: ['code'],
     commands: labels.map((label, index) => ({
       id: `id-${index}`,
+      slot: SLOT_KEYS[index],
       label,
       type: 'shell',
       command: `run-${index}`,
@@ -23,9 +25,9 @@ function press(view, ...keys) {
 }
 
 test('exports the mode and field vocabularies', () => {
-  assert.deepEqual([...MODES], ['list', 'form', 'confirm-delete', 'error']);
-  assert.deepEqual([...FORM_FIELDS], ['label', 'type', 'command', 'cwd', 'description']);
-  assert.deepEqual([...CHOICE_FIELDS].sort(), ['cwd', 'type']);
+  assert.deepEqual([...MODES], ['list', 'form', 'confirm-delete', 'error', 'import']);
+  assert.deepEqual([...FORM_FIELDS], ['label', 'slot', 'type', 'command', 'cwd', 'description']);
+  assert.deepEqual([...CHOICE_FIELDS].sort(), ['cwd', 'slot', 'type']);
 });
 
 test('createView starts in list mode with the cursor clamped', () => {
@@ -48,13 +50,12 @@ test('reduceKey rejects a non-object view', () => {
   assert.throws(() => reduceKey(null, 'enter'), TypeError);
 });
 
-test('arrow keys and vim keys move the cursor and wrap', () => {
+test('arrow keys move the cursor and wrap', () => {
   const view = createView({ doc: doc() });
   assert.equal(press(view, 'down').cursor, 1);
-  assert.equal(press(view, 'j', 'j').cursor, 2);
+  assert.equal(press(view, 'down', 'down').cursor, 2);
   assert.equal(press(view, 'down', 'down', 'down').cursor, 0);
   assert.equal(press(view, 'up').cursor, 2);
-  assert.equal(press(view, 'k').cursor, 2);
 });
 
 test('moving the cursor never emits an effect', () => {
@@ -90,40 +91,40 @@ test('digits address absolute positions even when the list has scrolled', () => 
   assert.equal(pressed.effect.command.label, 'cmd-0');
 });
 
-test('escape, q, and interrupt close the popup', () => {
+test('escape and interrupt close the popup', () => {
   const view = createView({ doc: doc() });
-  for (const key of ['escape', 'q', 'interrupt']) {
+  for (const key of ['escape', 'interrupt']) {
     assert.deepEqual(reduceKey(view, key).effect, { type: 'close' });
   }
 });
 
-test('o asks to open the config file', () => {
-  assert.deepEqual(reduceKey(createView({ doc: doc() }), 'o').effect, { type: 'open-config' });
+test('O asks to open the config file', () => {
+  assert.deepEqual(reduceKey(createView({ doc: doc() }), 'O').effect, { type: 'open-config' });
 });
 
 test('an empty list still closes and still opens the config', () => {
   const view = createView({ doc: doc([]) });
   assert.deepEqual(reduceKey(view, 'enter').effect, null);
-  assert.deepEqual(reduceKey(view, 'e').effect, null);
-  assert.equal(reduceKey(view, 'e').mode, 'list');
-  assert.deepEqual(reduceKey(view, 'd').effect, null);
-  assert.equal(reduceKey(view, 'd').mode, 'list');
-  assert.deepEqual(reduceKey(view, 'o').effect, { type: 'open-config' });
+  assert.deepEqual(reduceKey(view, 'E').effect, null);
+  assert.equal(reduceKey(view, 'E').mode, 'list');
+  assert.deepEqual(reduceKey(view, 'D').effect, null);
+  assert.equal(reduceKey(view, 'D').mode, 'list');
+  assert.deepEqual(reduceKey(view, 'O').effect, { type: 'open-config' });
   assert.deepEqual(reduceKey(view, 'escape').effect, { type: 'close' });
 });
 
-test('a opens an empty add form', () => {
-  const view = reduceKey(createView({ doc: doc() }), 'a');
+test('A opens an empty add form', () => {
+  const view = reduceKey(createView({ doc: doc() }), 'A');
   assert.equal(view.mode, 'form');
   assert.equal(view.form.commandId, null);
   assert.equal(view.form.fieldIndex, 0);
   assert.deepEqual(view.form.fields, {
-    label: '', type: 'shell', command: '', cwd: 'focused', description: '',
+    label: '', slot: '4', type: 'shell', command: '', cwd: 'focused', description: '',
   });
 });
 
-test('e prefills the form from the selected command', () => {
-  const view = press(createView({ doc: doc() }), 'down', 'e');
+test('E prefills the form from the selected command', () => {
+  const view = press(createView({ doc: doc() }), 'down', 'E');
   assert.equal(view.mode, 'form');
   assert.equal(view.form.commandId, 'id-1');
   assert.equal(view.form.fields.label, 'Two');
@@ -131,15 +132,15 @@ test('e prefills the form from the selected command', () => {
 });
 
 test('tab and backtab cycle form fields', () => {
-  const form = reduceKey(createView({ doc: doc() }), 'a');
+  const form = reduceKey(createView({ doc: doc() }), 'A');
   assert.equal(press(form, 'tab').form.fieldIndex, 1);
   assert.equal(press(form, 'down', 'down').form.fieldIndex, 2);
-  assert.equal(press(form, 'backtab').form.fieldIndex, 4);
-  assert.equal(press(form, 'up').form.fieldIndex, 4);
+  assert.equal(press(form, 'backtab').form.fieldIndex, 5);
+  assert.equal(press(form, 'up').form.fieldIndex, 5);
 });
 
 test('typing edits the focused text field, including Korean and spaces', () => {
-  let view = reduceKey(createView({ doc: doc() }), 'a');
+  let view = reduceKey(createView({ doc: doc() }), 'A');
   view = press(view, 'a', 'b', 'space', '한');
   assert.equal(view.form.fields.label, 'ab 한');
   view = reduceKey(view, 'backspace');
@@ -147,18 +148,18 @@ test('typing edits the focused text field, including Korean and spaces', () => {
 });
 
 test('digits are literal text inside the form', () => {
-  const view = press(reduceKey(createView({ doc: doc() }), 'a'), '3', '7');
+  const view = press(reduceKey(createView({ doc: doc() }), 'A'), '3', '7');
   assert.equal(view.form.fields.label, '37');
   assert.equal(view.form.effect, undefined);
 });
 
 test('named keys are never inserted as text', () => {
-  const view = press(reduceKey(createView({ doc: doc() }), 'a'), 'left', 'right');
+  const view = press(reduceKey(createView({ doc: doc() }), 'A'), 'left', 'right');
   assert.equal(view.form.fields.label, '');
 });
 
 test('left, right, and space cycle the type and cwd choices', () => {
-  let view = press(reduceKey(createView({ doc: doc() }), 'a'), 'tab');
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab', 'tab');
   assert.equal(view.form.fields.type, 'shell');
   view = reduceKey(view, 'right');
   assert.equal(view.form.fields.type, 'plugin_action');
@@ -167,14 +168,23 @@ test('left, right, and space cycle the type and cwd choices', () => {
   view = reduceKey(view, 'left');
   assert.equal(view.form.fields.type, 'plugin_action');
 
-  let cwdView = press(reduceKey(createView({ doc: doc() }), 'a'), 'tab', 'tab', 'tab');
+  let cwdView = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab', 'tab', 'tab', 'tab');
   assert.equal(cwdView.form.fields.cwd, 'focused');
   cwdView = reduceKey(cwdView, 'right');
   assert.equal(cwdView.form.fields.cwd, 'workspace');
 });
 
+test('left and right cycle the slot choice too', () => {
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab');
+  assert.equal(view.form.fields.slot, '4');
+  view = reduceKey(view, 'right');
+  assert.equal(view.form.fields.slot, '5');
+  view = reduceKey(view, 'left');
+  assert.equal(view.form.fields.slot, '4');
+});
+
 test('escape discards the form without saving', () => {
-  const view = press(reduceKey(createView({ doc: doc() }), 'a'), 'x', 'escape');
+  const view = press(reduceKey(createView({ doc: doc() }), 'A'), 'x', 'escape');
   assert.equal(view.mode, 'list');
   assert.equal(view.form, null);
   assert.equal(view.effect, null);
@@ -182,8 +192,9 @@ test('escape discards the form without saving', () => {
 });
 
 test('enter appends a new command and asks for a save', () => {
-  let view = reduceKey(createView({ doc: doc() }), 'a');
+  let view = reduceKey(createView({ doc: doc() }), 'A');
   for (const key of [...'Tidy']) view = reduceKey(view, key);
+  view = reduceKey(view, 'tab');
   view = reduceKey(view, 'tab');
   view = reduceKey(view, 'tab');
   for (const key of [...'ls']) view = reduceKey(view, key);
@@ -194,13 +205,13 @@ test('enter appends a new command and asks for a save', () => {
   assert.equal(view.doc.commands.length, 4);
   assert.equal(view.cursor, 3);
   assert.deepEqual(view.doc.commands[3], {
-    id: 'tidy', label: 'Tidy', type: 'shell', command: 'ls', cwd: 'focused', description: '',
+    id: 'tidy', slot: '4', label: 'Tidy', type: 'shell', command: 'ls', cwd: 'focused', description: '',
   });
   assert.deepEqual(view.effect, { type: 'save', doc: view.doc, cursor: 3 });
 });
 
 test('enter updates the edited command in place and keeps its id', () => {
-  let view = press(createView({ doc: doc() }), 'down', 'e');
+  let view = press(createView({ doc: doc() }), 'down', 'E');
   view = reduceKey(view, 'backspace');
   view = reduceKey(view, 'backspace');
   view = reduceKey(view, 'backspace');
@@ -215,16 +226,16 @@ test('enter updates the edited command in place and keeps its id', () => {
 });
 
 test('enter on an invalid form reports the reason and stays in the form', () => {
-  const view = reduceKey(reduceKey(createView({ doc: doc() }), 'a'), 'enter');
+  const view = reduceKey(reduceKey(createView({ doc: doc() }), 'A'), 'enter');
   assert.equal(view.mode, 'form');
   assert.match(view.formError, /label/u);
   assert.equal(view.effect, null);
 });
 
 test('a plugin_action form rejects a bare action id', () => {
-  let view = reduceKey(createView({ doc: doc() }), 'a');
+  let view = reduceKey(createView({ doc: doc() }), 'A');
   for (const key of [...'Explorer']) view = reduceKey(view, key);
-  view = press(view, 'tab', 'right', 'tab');
+  view = press(view, 'tab', 'tab', 'right', 'tab');
   for (const key of [...'open']) view = reduceKey(view, key);
   view = reduceKey(view, 'enter');
   assert.equal(view.mode, 'form');
@@ -232,9 +243,9 @@ test('a plugin_action form rejects a bare action id', () => {
 });
 
 test('a duplicate label gets a deduped id rather than an error', () => {
-  let view = reduceKey(createView({ doc: doc(['One']) }), 'a');
+  let view = reduceKey(createView({ doc: doc(['One']) }), 'A');
   for (const key of [...'One']) view = reduceKey(view, key);
-  view = press(view, 'tab', 'tab');
+  view = press(view, 'tab', 'tab', 'tab');
   for (const key of [...'ls']) view = reduceKey(view, key);
   view = reduceKey(view, 'enter');
   assert.deepEqual(view.doc.commands.map((command) => command.id), ['id-0', 'one']);
@@ -244,17 +255,17 @@ test('editing a command keeps its own id available to itself', () => {
   const single = {
     schema_version: 1,
     editor: ['code'],
-    commands: [{ id: 'keep', label: 'Keep', type: 'shell', command: 'ls', cwd: 'focused', description: '' }],
+    commands: [{ id: 'keep', slot: '1', label: 'Keep', type: 'shell', command: 'ls', cwd: 'focused', description: '' }],
   };
-  let view = reduceKey(createView({ doc: single }), 'e');
-  view = press(view, 'tab', 'tab');
+  let view = reduceKey(createView({ doc: single }), 'E');
+  view = press(view, 'tab', 'tab', 'tab');
   for (const key of [...'!']) view = reduceKey(view, key);
   view = reduceKey(view, 'enter');
   assert.equal(view.doc.commands[0].id, 'keep');
 });
 
 test('d then y removes the command and asks for a save', () => {
-  const confirm = press(createView({ doc: doc() }), 'down', 'd');
+  const confirm = press(createView({ doc: doc() }), 'down', 'D');
   assert.equal(confirm.mode, 'confirm-delete');
   assert.equal(confirm.effect, null);
   const deleted = reduceKey(confirm, 'y');
@@ -264,19 +275,19 @@ test('d then y removes the command and asks for a save', () => {
 });
 
 test('deleting the last row clamps the cursor', () => {
-  const deleted = press(createView({ doc: doc() }), 'up', 'd', 'y');
+  const deleted = press(createView({ doc: doc() }), 'up', 'D', 'y');
   assert.equal(deleted.cursor, 1);
   assert.equal(deleted.doc.commands.length, 2);
 });
 
 test('deleting the only command leaves an empty list at cursor zero', () => {
-  const deleted = press(createView({ doc: doc(['Only']) }), 'd', 'y');
+  const deleted = press(createView({ doc: doc(['Only']) }), 'D', 'y');
   assert.deepEqual(deleted.doc.commands, []);
   assert.equal(deleted.cursor, 0);
 });
 
 test('any key other than y cancels the delete', () => {
-  const confirm = reduceKey(createView({ doc: doc() }), 'd');
+  const confirm = reduceKey(createView({ doc: doc() }), 'D');
   for (const key of ['n', 'escape', 'enter', 'Y']) {
     const cancelled = reduceKey(confirm, key);
     assert.equal(cancelled.mode, 'list', key);
@@ -308,4 +319,87 @@ test('a stale effect is cleared by the next key', () => {
   const ran = reduceKey(createView({ doc: doc() }), 'enter');
   assert.equal(ran.effect.type, 'run');
   assert.equal(reduceKey(ran, 'down').effect, null);
+});
+
+test('a lowercase key or digit runs the command in that slot', () => {
+  const view = createView({ doc: doc(['One', 'Two', 'Three']) });
+  assert.equal(reduceKey(view, '1').effect.command.label, 'One');
+  assert.equal(reduceKey(view, '3').effect.command.label, 'Three');
+  assert.equal(reduceKey(view, '4').effect, null, 'no command in slot 4');
+});
+
+test('slots are addressed by key, not by position', () => {
+  const custom = {
+    schema_version: 1,
+    editor: [],
+    commands: [
+      { id: 'deploy', slot: 'd', label: 'Deploy', type: 'shell', command: './deploy', cwd: 'focused', description: '' },
+      { id: 'logs', slot: 'l', label: 'Logs', type: 'shell', command: 'tail -f log', cwd: 'focused', description: '' },
+    ],
+  };
+  const view = createView({ doc: custom });
+  assert.equal(reduceKey(view, 'd').effect.command.label, 'Deploy');
+  assert.equal(reduceKey(view, 'l').effect.command.label, 'Logs');
+  assert.equal(reduceKey(view, '1').effect, null, 'nothing claims slot 1');
+});
+
+test('running by slot moves the cursor onto it', () => {
+  const view = createView({ doc: doc(['One', 'Two', 'Three']) });
+  assert.equal(reduceKey(view, '3').cursor, 2);
+});
+
+test('uppercase keys are the actions', () => {
+  const view = createView({ doc: doc() });
+  assert.equal(reduceKey(view, 'A').mode, 'form');
+  assert.equal(reduceKey(view, 'A').form.commandId, null);
+  assert.equal(reduceKey(view, 'E').mode, 'form');
+  assert.equal(reduceKey(view, 'E').form.commandId, 'id-0');
+  assert.equal(reduceKey(view, 'D').mode, 'confirm-delete');
+  assert.deepEqual(reduceKey(view, 'O').effect, { type: 'open-config' });
+});
+
+test('the old lowercase action keys now run their slots instead', () => {
+  // a/e/d/o are slots 11-14 in a long enough list; with three commands they do nothing
+  const view = createView({ doc: doc() });
+  for (const key of ['a', 'e', 'd', 'o', 'q']) {
+    const pressed = reduceKey(view, key);
+    assert.equal(pressed.effect, null, key);
+    assert.equal(pressed.mode, 'list', key);
+  }
+});
+
+test('escape and interrupt still close, but q does not', () => {
+  const view = createView({ doc: doc() });
+  assert.deepEqual(reduceKey(view, 'escape').effect, { type: 'close' });
+  assert.deepEqual(reduceKey(view, 'interrupt').effect, { type: 'close' });
+  assert.equal(reduceKey(view, 'q').effect, null);
+});
+
+test('arrow keys walk the grid using the column count given', () => {
+  const labels = Array.from({ length: 7 }, (unused, index) => `c${index}`);
+  const view = createView({ doc: doc(labels) });
+  const grid = { columns: 3 };
+  assert.equal(reduceKey(view, 'right', grid).cursor, 1);
+  assert.equal(reduceKey(view, 'down', grid).cursor, 3);
+  assert.equal(reduceKey(reduceKey(view, 'down', grid), 'up', grid).cursor, 0);
+  assert.equal(reduceKey(view, 'left', grid).cursor, 6, 'wraps to the last cell');
+});
+
+test('vertical movement clamps rather than skipping past the end', () => {
+  const labels = Array.from({ length: 7 }, (unused, index) => `c${index}`);
+  const view = createView({ doc: doc(labels), cursor: 5 });
+  // row 1, column 2; one row down would be index 8, which does not exist
+  assert.equal(reduceKey(view, 'down', { columns: 3 }).cursor, 6);
+});
+
+test('without a column count the arrows behave linearly', () => {
+  const view = createView({ doc: doc() });
+  assert.equal(reduceKey(view, 'down').cursor, 1);
+  assert.equal(reduceKey(view, 'up').cursor, 2);
+});
+
+test('j and k no longer navigate, because they are slots', () => {
+  const view = createView({ doc: doc() });
+  assert.equal(reduceKey(view, 'j').cursor, 0);
+  assert.equal(reduceKey(view, 'k').cursor, 0);
 });

@@ -18,8 +18,8 @@ test('manifest identity matches the shared plugin constants', async () => {
 test('manifest declares a popup pane with an explicit size', async () => {
   const text = await readFile(manifestUrl, 'utf8');
   assert.match(text, /^placement = "popup"$/mu);
-  assert.match(text, /^width = \d+$/mu);
-  assert.match(text, /^height = \d+$/mu);
+  assert.match(text, /^width = "\d+%"$/mu);
+  assert.match(text, /^height = "\d+%"$/mu);
 });
 
 test('manifest entrypoints exist and are plain node invocations', async () => {

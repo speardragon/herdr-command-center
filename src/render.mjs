@@ -10,13 +10,14 @@ const MAX_ROWS = 100;
 const PADDING_X = 2;
 const PADDING_Y = 1;
 
-const LIST_FOOTER = '↑↓ move · enter run · 1-9 run · a add · e edit · d delete · o edit file · esc close';
+const LIST_FOOTER = '↑↓←→ move · enter run · slot key runs · A add · E edit · D delete · O edit file · I import · esc close';
 const FORM_FOOTER = 'type to edit · tab/↑↓ field · ←→ change · enter save · esc cancel';
 const CONFIRM_FOOTER = 'y delete · any other key cancels';
 const ERROR_FOOTER = 'o edit file · esc close';
 
 const FIELD_LABELS = Object.freeze({
   label: 'Label',
+  slot: 'Slot',
   type: 'Type',
   command: 'Command',
   cwd: 'Cwd',
@@ -43,33 +44,27 @@ function boundedSize(size) {
   };
 }
 
-function viewportRange(cursor, length, budget) {
-  const safeCursor = Math.max(0, Math.min(length - 1, cursor));
-  let start = safeCursor;
-  let end = safeCursor;
-  const rows = (nextStart, nextEnd) => (
-    nextEnd - nextStart + 1
-    + (nextStart > 0 ? 1 : 0)
-    + (nextEnd < length - 1 ? 1 : 0)
-  );
-  for (;;) {
-    const candidates = safeCursor - start <= end - safeCursor
-      ? [[start - 1, end], [start, end + 1]]
-      : [[start, end + 1], [start - 1, end]];
-    const next = candidates.find(([nextStart, nextEnd]) => (
-      nextStart >= 0 && nextEnd < length && rows(nextStart, nextEnd) <= budget
-    ));
-    if (!next) return { start, end };
-    [start, end] = next;
-  }
+const MIN_CELL_WIDTH = 26;
+const MAX_GRID_COLUMNS = 4;
+
+// One definition, used by both the renderer and the popup: if the layout and the
+// reducer ever disagreed about the column count, the arrow keys would move the
+// cursor somewhere other than where the grid shows it.
+function columnsForWidth(width) {
+  return Math.max(1, Math.min(MAX_GRID_COLUMNS, Math.floor(width / MIN_CELL_WIDTH)));
 }
 
-function commandRow(view, command, index, width, color) {
+export function gridColumns(view, size = {}) {
+  const { outerWidth } = boundedSize(size);
+  return columnsForWidth(Math.max(1, outerWidth - PADDING_X * 2));
+}
+
+function cell(view, command, index, cellWidth, color) {
   const marker = index === view.cursor ? '›' : ' ';
-  const badge = index < 9 ? `${index + 1}.` : '  ';
-  const line = clipLine(`${marker} ${badge} ${command.label}`, width);
-  if (!color) return line;
-  return index === view.cursor ? styles.bold(styles.cyan(line)) : line;
+  const text = clipLine(`${marker} ${command.slot}  ${command.label}`, cellWidth);
+  const padded = text + ' '.repeat(Math.max(0, cellWidth - displayWidth(text)));
+  if (!color) return padded;
+  return index === view.cursor ? styles.bold(styles.cyan(padded)) : padded;
 }
 
 function listBody(view, width, budget, color) {
@@ -78,23 +73,29 @@ function listBody(view, width, budget, color) {
   const header = clipLine(`Command Center · ${count} command${count === 1 ? '' : 's'}`, width);
   const lines = [color ? styles.bold(header) : header, ''];
   if (count === 0) {
-    lines.push(...wrap('Press a to add one, or o to open commands.toml in your editor.', width));
+    lines.push(...wrap('Press A to add one, I to import from your herdr config, or O to open commands.toml.', width));
     return lines;
   }
+  const columns = columnsForWidth(width);
+  const cellWidth = Math.floor(width / columns);
   const selected = commands[Math.max(0, Math.min(count - 1, view.cursor))];
   const detail = [
     clipLine(`${selected.type} · ${selected.command}`, width),
     ...(selected.description.length > 0 ? [clipLine(selected.description, width)] : []),
   ];
-  // Reserve the header, the blank line, the blank separator, and the detail
-  // block; whatever is left is how many rows the scrolling list may use.
-  const listBudget = Math.max(1, budget - lines.length - 1 - detail.length);
-  const { start, end } = viewportRange(view.cursor, count, listBudget);
-  if (start > 0) lines.push(clipLine('↑ more', width));
-  for (let index = start; index <= end; index += 1) {
-    lines.push(commandRow(view, commands[index], index, width, color));
+  const rowBudget = Math.max(1, budget - lines.length - 1 - detail.length);
+  const rows = Math.ceil(count / columns);
+  const shown = Math.min(rows, rowBudget);
+  for (let row = 0; row < shown; row += 1) {
+    const parts = [];
+    for (let column = 0; column < columns; column += 1) {
+      const index = row * columns + column;
+      if (index >= count) break;
+      parts.push(cell(view, commands[index], index, cellWidth, color));
+    }
+    lines.push(parts.join('').trimEnd());
   }
-  if (end < count - 1) lines.push(clipLine('↓ more', width));
+  if (shown < rows) lines.push(clipLine(`↓ ${count - shown * columns} more`, width));
   lines.push('');
   lines.push(...(color ? detail.map((line) => styles.dim(line)) : detail));
   return lines;

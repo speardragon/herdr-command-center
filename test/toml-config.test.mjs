@@ -13,6 +13,7 @@ import {
 
 const COMMAND = Object.freeze({
   id: 'open-in-vs-code',
+  slot: '1',
   label: 'Open in VS Code',
   type: 'shell',
   command: 'code .',
@@ -44,6 +45,7 @@ test('renderCommandBlock emits a parseable block with a stable key order', () =>
   assert.equal(text, [
     '[[commands]]',
     'id = "open-in-vs-code"',
+    'slot = "1"',
     'label = "Open in VS Code"',
     'type = "shell"',
     'command = "code ."',

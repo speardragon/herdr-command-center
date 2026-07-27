@@ -13,7 +13,7 @@ import { promisify } from 'node:util';
 import { readContext } from '../src/context.mjs';
 import { createKeyDecoder } from '../src/keys.mjs';
 import { commandsPath, resolveConfigDir, resolveStateDir, runLogPath } from '../src/paths.mjs';
-import { renderView, textCursor } from '../src/render.mjs';
+import { gridColumns, renderView, textCursor } from '../src/render.mjs';
 import { ConfigError, DEFAULT_EDITOR } from '../src/schema.mjs';
 import { ensureStore, saveStore } from '../src/store.mjs';
 import { createView, reduceKey } from '../src/view.mjs';
@@ -171,7 +171,7 @@ export async function runPopup({
     for await (const chunk of stdin) {
       if (stopCode !== null) break;
       for (const key of decoder.push(chunk)) {
-        view = reduceKey(view, key);
+        view = reduceKey(view, key, { columns: gridColumns(view, screenSize(stdout, useColor)) });
         const { effect } = view;
         if (!effect) {
           draw();
