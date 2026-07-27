@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1116" height="354" viewBox="0 0 1116 354" font-family="ui-monospace, SFMono-Regular, &#x27;SF Mono&#x27;, Menlo, Consolas, &#x27;DejaVu Sans Mono&#x27;, &#x27;Apple SD Gothic Neo&#x27;, monospace" font-size="15.0">
 <rect width="1116" height="354" rx="10.0" fill="#16161e"/>
-<text x="36.00" y="51.30" fill="#c0caf5" font-weight="600" xml:space="preserve">Command Center · import from herdr config · 4 found</text>
-<text x="36.00" y="97.30" fill="#7dcfff" font-weight="600" xml:space="preserve">› prefix+d  Open in VS Code  (already added)</text>
-<text x="18.00" y="120.30" fill="#c0caf5" xml:space="preserve">    prefix+l  Open lazygit in a popup</text>
-<text x="36.00" y="143.30" fill="#c0caf5" opacity="0.55" xml:space="preserve">  prefix+w  Focus the west pane  (unsupported)</text>
-<text x="18.00" y="166.30" fill="#c0caf5" xml:space="preserve">    prefix+r  Build the project</text>
-<text x="36.00" y="212.30" fill="#c0caf5" opacity="0.55" xml:space="preserve">shell · code .</text>
-<text x="36.00" y="304.30" fill="#c0caf5" opacity="0.55" xml:space="preserve">↑↓ move · enter set up · esc cancel</text>
+<text x="36.00" y="51.30" fill="#c0caf5" font-weight="600" xml:space="preserve" textLength="459.00" lengthAdjust="spacingAndGlyphs">Command Center · import from herdr config · 4 found</text>
+<text x="36.00" y="97.30" fill="#7dcfff" font-weight="600" xml:space="preserve" textLength="396.00" lengthAdjust="spacingAndGlyphs">› prefix+d  Open in VS Code  (already added)</text>
+<text x="18.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="333.00" lengthAdjust="spacingAndGlyphs">    prefix+l  Open lazygit in a popup</text>
+<text x="36.00" y="143.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="414.00" lengthAdjust="spacingAndGlyphs">  prefix+w  Focus the west pane  (unsupported)</text>
+<text x="18.00" y="166.30" fill="#c0caf5" xml:space="preserve" textLength="279.00" lengthAdjust="spacingAndGlyphs">    prefix+r  Build the project</text>
+<text x="36.00" y="212.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="126.00" lengthAdjust="spacingAndGlyphs">shell · code .</text>
+<text x="36.00" y="304.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="315.00" lengthAdjust="spacingAndGlyphs">↑↓ move · enter set up · esc cancel</text>
 </svg>

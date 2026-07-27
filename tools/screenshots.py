@@ -362,6 +362,14 @@ def render(frame, cols=88):
                 if style['dim']:
                     attrs.append(f'opacity="{DIM_OPACITY}"')
                 attrs.append('xml:space="preserve"')
+                # Pin the run to exactly the cells it occupies. Without this the
+                # browser's CJK fallback font does not advance exactly two cells
+                # per syllable, so everything after a Korean label drifts and the
+                # picture shows a misalignment the real terminal does not have.
+                cells = display_width(text)
+                if cells:
+                    attrs.append(f'textLength="{cells * CELL_W:.2f}"')
+                    attrs.append('lengthAdjust="spacingAndGlyphs"')
                 parts.append(f'<text {" ".join(attrs)}>{html.escape(text)}</text>')
             col += display_width(text)
     if caret is not None:
