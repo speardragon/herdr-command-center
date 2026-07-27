@@ -2874,10 +2874,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildPaneLine,
   buildPluginActionArgs,
   buildShellSpawn,
   executeCommand,
   ExecutionError,
+  shellQuote,
   UI_BUSY_CODE,
 } from '../src/executor.mjs';
 
@@ -8183,15 +8185,27 @@ line, so a config directory containing a space needs no escaping from us."
 
 **Why this is not just another shell type:** `herdr pane run <pane> '<line>'` maps
 to `pane.send_input` — it types the line into that pane and presses Enter. That is
-exactly what "show me the output where I am looking" needs, and it is also
-dangerous: if the focused pane is running an agent, the line is submitted to the
+exactly what "show me the output where I am looking" needs, and it keeps a real
+TTY, so `lazygit` and `htop` work as well as `echo`.
+
+It also brings two problems that the implementation has to answer.
+
+*The pane may not be a shell.* If an agent owns it, the line is submitted to the
 **agent** as a prompt. Most panes on the author's machine run `claude`. So the
 executor refuses when `focusedPaneAgent` is set, and says why.
+
+*The shell is already somewhere.* Typed input runs in whatever directory that
+shell happens to be in, which would silently ignore the command's own `cwd`. The
+line is therefore wrapped in a subshell — `(cd '<resolved cwd>' && <command>)` —
+which honours `cwd` without moving the user's shell out from under them. The path
+is single-quoted through `shellQuote`, so a directory containing a space, a quote
+or a `$` cannot break the line.
 
 **Interfaces:**
 - `COMMAND_TYPES` becomes `['shell', 'pane', 'plugin_action']`.
 - `readContext` also returns `focusedPaneId: string | null` and `focusedPaneAgent: string | null`; `serializeContext` carries them.
 - `executeCommand` handles `pane`, and takes an optional `notify` function.
+- `src/executor.mjs` also exports `shellQuote(value: string): string` and `buildPaneLine(command, context): string`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -8247,10 +8261,30 @@ function paneCommand(overrides = {}) {
   };
 }
 
+test('shellQuote makes any directory safe to paste into a shell line', () => {
+  assert.equal(shellQuote('/tmp/plain'), "'/tmp/plain'");
+  assert.equal(shellQuote('/tmp/with space'), "'/tmp/with space'");
+  assert.equal(shellQuote("/tmp/it's"), "'/tmp/it'\\''s'");
+  assert.equal(shellQuote('/tmp/$HOME`x`'), "'/tmp/$HOME`x`'");
+});
+
+test('buildPaneLine runs the command in the resolved cwd via a subshell', () => {
+  // Typed input would otherwise run wherever that shell already is, silently
+  // ignoring the command's own cwd.
+  assert.equal(
+    buildPaneLine(paneCommand(), { focusedPaneCwd: '/Users/cdragon/repo', workspaceCwd: '/Users/cdragon' }),
+    "(cd '/Users/cdragon/repo' && echo hello)",
+  );
+  assert.equal(
+    buildPaneLine(paneCommand({ cwd: 'workspace' }), { focusedPaneCwd: '/a', workspaceCwd: '/b' }),
+    "(cd '/b' && echo hello)",
+  );
+});
+
 test('a pane command is typed into the focused pane so its output shows there', async () => {
   const calls = [];
   const result = await executeCommand(paneCommand(), {
-    context: { focusedPaneId: 'wC:p7', focusedPaneAgent: null },
+    context: { focusedPaneId: 'wC:p7', focusedPaneAgent: null, focusedPaneCwd: '/Users/cdragon/repo' },
     herdrBin: '/opt/homebrew/bin/herdr',
     spawn: () => { throw new Error('a pane command must not spawn'); },
     execFile: async (bin, args) => { calls.push({ bin, args }); return { stdout: '{}', stderr: '' }; },
@@ -8259,19 +8293,19 @@ test('a pane command is typed into the focused pane so its output shows there', 
   assert.deepEqual(result, { status: 'sent' });
   assert.deepEqual(calls, [{
     bin: '/opt/homebrew/bin/herdr',
-    args: ['pane', 'run', 'wC:p7', 'echo hello'],
+    args: ['pane', 'run', 'wC:p7', "(cd '/Users/cdragon/repo' && echo hello)"],
   }]);
 });
 
 test('a pane command keeps shell metacharacters in one argument', async () => {
   let args = null;
   await executeCommand(paneCommand({ command: 'printf "a\\nb\\n" | wc -l' }), {
-    context: { focusedPaneId: 'wC:p7', focusedPaneAgent: null },
+    context: { focusedPaneId: 'wC:p7', focusedPaneAgent: null, focusedPaneCwd: '/r' },
     spawn: () => {},
     execFile: async (bin, callArgs) => { args = callArgs; return { stdout: '{}' }; },
     sleep: noSleep,
   });
-  assert.equal(args.at(-1), 'printf "a\\nb\\n" | wc -l');
+  assert.equal(args.at(-1), "(cd '/r' && printf \"a\\nb\\n\" | wc -l)");
   assert.equal(args.length, 4, 'the line is one argument, not split on spaces');
 });
 
@@ -8358,6 +8392,19 @@ export function serializeContext(context) {
 - [ ] **Step 5: Execute it in `src/executor.mjs`**
 
 ```js
+// Single quotes are the only shell quoting with no escapes inside, so a path can
+// be wrapped verbatim once its own single quotes are closed, escaped and reopened.
+export function shellQuote(value) {
+  return `'${String(value).split("'").join("'\\''")}'`;
+}
+
+// Typed input runs wherever that shell already is, so the command's own cwd would
+// be ignored. A subshell honours it without leaving the user's shell somewhere
+// they did not put it.
+export function buildPaneLine(command, context) {
+  return `(cd ${shellQuote(resolveCwd(command, context))} && ${command.command})`;
+}
+
 async function runInPane(command, { context, herdrBin, env, execFile, log, notify }) {
   const paneId = context?.focusedPaneId;
   const agent = context?.focusedPaneAgent;
@@ -8378,14 +8425,16 @@ async function runInPane(command, { context, herdrBin, env, execFile, log, notif
     }
     throw new ExecutionError(`the focused pane is running ${agent}, not a shell`);
   }
-  await execFile(herdrBin, ['pane', 'run', paneId, command.command], {
+  await execFile(herdrBin, ['pane', 'run', paneId, buildPaneLine(command, context)], {
     env,
     encoding: 'utf8',
     timeout: CLI_TIMEOUT_MS,
     maxBuffer: MAX_BUFFER_BYTES,
     shell: false,
   });
-  if (typeof log === 'function') await log('pane', { id: command.id, paneId });
+  if (typeof log === 'function') {
+    await log('pane', { id: command.id, paneId, cwd: resolveCwd(command, context) });
+  }
   return { status: 'sent' };
 }
 ```
@@ -8467,6 +8516,12 @@ panes on the author's machine run claude. So the executor refuses when the
 invocation context reports an agent, logs it, and raises a herdr notification
 naming the agent and what to do instead — silence would look like a broken
 keybinding, and running anyway would prompt somebody's Claude with 'echo hello'.
+
+The line is wrapped in a subshell, (cd '<cwd>' && <command>), because typed input
+would otherwise run in whatever directory that shell was already sitting in and
+silently ignore the command's own cwd. A subshell honours cwd without moving the
+user's shell out from under them, and shellQuote keeps a directory containing a
+space or a quote from breaking the line.
 
 Pane id and agent are now carried in the forwarded context. HERDR_PANE_ID is
 still not a fallback: inside the popup that is the popup's own pane."
