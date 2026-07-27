@@ -7,11 +7,14 @@ import {
   ConfigError,
   DEFAULT_EDITOR,
   defaultConfig,
+  MAX_COMMANDS,
+  nextFreeSlot,
   normalizeCommand,
   normalizeConfig,
   parsePluginActionTarget,
   SCHEMA_VERSION,
   slugify,
+  SLOT_KEYS,
   uniqueId,
 } from '../src/schema.mjs';
 
@@ -56,6 +59,7 @@ test('parsePluginActionTarget rejects targets without a plugin and an action', (
 test('normalizeCommand fills defaults and derives an id from the label', () => {
   assert.deepEqual(normalizeCommand({ label: 'Open in VS Code', type: 'shell', command: 'code .' }), {
     id: 'open-in-vs-code',
+    slot: '1',
     label: 'Open in VS Code',
     type: 'shell',
     command: 'code .',
@@ -190,4 +194,84 @@ test('normalizeConfig rejects duplicate explicit ids', () => {
     }),
     (error) => error instanceof ConfigError && /duplicate/u.test(error.message),
   );
+});
+
+test('SLOT_KEYS starts at 1 so the first nine commands keep their old numbers', () => {
+  assert.equal(SLOT_KEYS.slice(0, 10), '1234567890');
+  assert.equal(SLOT_KEYS.length, 36);
+  assert.equal(new Set(SLOT_KEYS).size, 36, 'no slot key appears twice');
+  assert.equal(MAX_COMMANDS, SLOT_KEYS.length);
+});
+
+test('nextFreeSlot walks SLOT_KEYS in order', () => {
+  assert.equal(nextFreeSlot([]), '1');
+  assert.equal(nextFreeSlot(['1', '2']), '3');
+  assert.equal(nextFreeSlot([...'123456789']), '0');
+  assert.equal(nextFreeSlot([...'1234567890']), 'a');
+  assert.equal(nextFreeSlot([...SLOT_KEYS]), null);
+});
+
+test('normalizeCommand accepts an explicit slot and lowercases it', () => {
+  assert.equal(normalizeCommand({ slot: 'g', label: 'a', type: 'shell', command: 'ls' }).slot, 'g');
+  // uppercase is the action namespace, so a stored uppercase slot would be dead
+  assert.equal(normalizeCommand({ slot: 'G', label: 'a', type: 'shell', command: 'ls' }).slot, 'g');
+});
+
+test('normalizeCommand assigns the first free slot when none is given', () => {
+  assert.equal(normalizeCommand({ label: 'a', type: 'shell', command: 'ls' }).slot, '1');
+  assert.equal(
+    normalizeCommand({ label: 'a', type: 'shell', command: 'ls' }, { existingSlots: ['1', '2'] }).slot,
+    '3',
+  );
+});
+
+test('an empty slot means "assign me one", exactly as an empty id does', () => {
+  assert.equal(normalizeCommand({ slot: '', label: 'a', type: 'shell', command: 'ls' }).slot, '1');
+});
+
+test('normalizeCommand rejects a slot that is not a single slot key', () => {
+  for (const slot of ['ab', '!', ' ', 'A1']) {
+    assert.throws(
+      () => normalizeCommand({ slot, label: 'a', type: 'shell', command: 'ls' }),
+      (error) => error instanceof ConfigError && /slot/u.test(error.message),
+      JSON.stringify(slot),
+    );
+  }
+});
+
+test('normalizeConfig fills slots in document order and keeps explicit ones', () => {
+  const doc = normalizeConfig({
+    commands: [
+      { label: 'a', type: 'shell', command: 'a' },
+      { slot: 'z', label: 'b', type: 'shell', command: 'b' },
+      { label: 'c', type: 'shell', command: 'c' },
+    ],
+  });
+  assert.deepEqual(doc.commands.map((command) => command.slot), ['1', 'z', '2']);
+});
+
+test('normalizeConfig rejects two commands claiming the same slot', () => {
+  assert.throws(
+    () => normalizeConfig({
+      commands: [
+        { slot: 'g', label: 'a', type: 'shell', command: 'a' },
+        { slot: 'g', label: 'b', type: 'shell', command: 'b' },
+      ],
+    }),
+    (error) => error instanceof ConfigError && /slot "g"/u.test(error.message),
+  );
+});
+
+test('normalizeConfig refuses more commands than there are slots', () => {
+  const commands = Array.from({ length: 37 }, (unused, index) => ({
+    label: `cmd ${index}`, type: 'shell', command: 'ls',
+  }));
+  assert.throws(
+    () => normalizeConfig({ commands }),
+    (error) => error instanceof ConfigError && /36/u.test(error.message),
+  );
+});
+
+test('defaultConfig seeds slots 1 to 3', () => {
+  assert.deepEqual(defaultConfig().commands.map((command) => command.slot), ['1', '2', '3']);
 });

@@ -9,7 +9,11 @@ const MAX_LABEL_LENGTH = 80;
 const MAX_COMMAND_LENGTH = 2_000;
 const MAX_DESCRIPTION_LENGTH = 200;
 const MAX_ID_LENGTH = 64;
-const MAX_COMMANDS = 200;
+// Digits first and starting at 1, so the first nine commands keep the numbers
+// they had before slots existed. Lowercase only: uppercase is the action
+// namespace in the list, so an uppercase slot would name a key that runs nothing.
+export const SLOT_KEYS = '1234567890abcdefghijklmnopqrstuvwxyz';
+export const MAX_COMMANDS = SLOT_KEYS.length;
 const MAX_EDITOR_ARGS = 8;
 // Unicode-aware so a Korean label yields a readable id instead of "command-7".
 const ID_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}_-]*$/u;
@@ -48,6 +52,14 @@ export function uniqueId(base, existingIds = []) {
   throw new ConfigError(`could not derive a unique id for "${base}"`);
 }
 
+export function nextFreeSlot(usedSlots = []) {
+  const taken = new Set(usedSlots);
+  for (const slot of SLOT_KEYS) {
+    if (!taken.has(slot)) return slot;
+  }
+  return null;
+}
+
 export function parsePluginActionTarget(target) {
   const text = typeof target === 'string' ? target.trim() : '';
   const lastDot = text.lastIndexOf('.');
@@ -80,7 +92,7 @@ function normalizeDescription(value) {
   return text.replace(/[\u0000\r\n]/gu, ' ');
 }
 
-export function normalizeCommand(value, { existingIds = [] } = {}) {
+export function normalizeCommand(value, { existingIds = [], existingSlots = [] } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new ConfigError('a command must be an object');
   }
@@ -101,8 +113,22 @@ export function normalizeCommand(value, { existingIds = [] } = {}) {
       throw new ConfigError(`id "${id}" must contain only letters, digits, "-", and "_"`);
     }
   }
+  let slot;
+  if (value.slot === undefined || value.slot === null || value.slot === '') {
+    slot = nextFreeSlot(existingSlots);
+    if (slot === null) {
+      throw new ConfigError(`there is no free slot left; at most ${MAX_COMMANDS} commands fit`);
+    }
+  } else {
+    if (typeof value.slot !== 'string') throw new ConfigError('slot must be a string');
+    slot = value.slot.toLowerCase();
+    if ([...slot].length !== 1 || !SLOT_KEYS.includes(slot)) {
+      throw new ConfigError(`slot must be one character from "${SLOT_KEYS}"`);
+    }
+  }
   return {
     id,
+    slot,
     label,
     type,
     command,
@@ -134,10 +160,11 @@ export function normalizeConfig(value) {
   }
   const commands = [];
   const existingIds = [];
+  const existingSlots = [];
   rawCommands.forEach((entry, index) => {
     let normalized;
     try {
-      normalized = normalizeCommand(entry, { existingIds });
+      normalized = normalizeCommand(entry, { existingIds, existingSlots });
     } catch (error) {
       if (!(error instanceof ConfigError)) throw error;
       throw new ConfigError(`commands[${index}]: ${error.message}`);
@@ -145,7 +172,11 @@ export function normalizeConfig(value) {
     if (existingIds.includes(normalized.id)) {
       throw new ConfigError(`commands[${index}]: duplicate id "${normalized.id}"`);
     }
+    if (existingSlots.includes(normalized.slot)) {
+      throw new ConfigError(`commands[${index}]: duplicate slot "${normalized.slot}"`);
+    }
     existingIds.push(normalized.id);
+    existingSlots.push(normalized.slot);
     commands.push(normalized);
   });
   return { schema_version: SCHEMA_VERSION, editor: normalizeEditor(value.editor), commands };
@@ -158,6 +189,7 @@ export function defaultConfig() {
     commands: [
       {
         id: 'open-in-vs-code',
+        slot: '1',
         label: 'Open in VS Code',
         type: 'shell',
         command: 'code .',
@@ -166,6 +198,7 @@ export function defaultConfig() {
       },
       {
         id: 'open-repo-on-github',
+        slot: '2',
         label: 'Open repo on GitHub',
         type: 'shell',
         command: 'gh browse',
@@ -174,6 +207,7 @@ export function defaultConfig() {
       },
       {
         id: 'open-pull-request',
+        slot: '3',
         label: 'Open pull request',
         type: 'shell',
         command: 'gh pr view --web',

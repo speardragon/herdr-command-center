@@ -7135,8 +7135,12 @@ test('normalizeCommand assigns the first free slot when none is given', () => {
   );
 });
 
+test('an empty slot means "assign me one", exactly as an empty id does', () => {
+  assert.equal(normalizeCommand({ slot: '', label: 'a', type: 'shell', command: 'ls' }).slot, '1');
+});
+
 test('normalizeCommand rejects a slot that is not a single slot key', () => {
-  for (const slot of ['', 'ab', '!', ' ', 'A1']) {
+  for (const slot of ['ab', '!', ' ', 'A1']) {
     assert.throws(
       () => normalizeCommand({ slot, label: 'a', type: 'shell', command: 'ls' }),
       (error) => error instanceof ConfigError && /slot/u.test(error.message),
