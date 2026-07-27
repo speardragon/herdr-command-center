@@ -5989,6 +5989,20 @@ test('an unchanged block keeps hand-formatting the renderer would not produce', 
   assert.ok(result.includes('label   =   "Spaced Out"   # why not'));
 });
 
+test('moving a command to a different slot is actually written', () => {
+  // Regression: COMPARED_KEYS omitted slot, so a slot-only change looked like no
+  // change and the old block — with the old slot — was reused verbatim.
+  const moved = commandsOf(HAND_WRITTEN).map((command, index) => (
+    index === 0 ? { ...command, slot: 'g' } : command));
+  const result = applyCommands(HAND_WRITTEN, moved);
+  assert.ok(result.includes('slot = "g"'), 'the new slot reached the file');
+  assert.equal(commandsOf(result)[0].slot, 'g');
+  assert.ok(result.includes('# 자주 쓰는 것들'), 'unrelated comments still survive');
+  // The sibling block carries no explicit slot in this fixture, so its slot is
+  // re-derived on read. Files the popup writes always name every slot.
+  assert.ok(!result.includes('slot = "1"'));
+});
+
 test('deleting a command removes only its block', () => {
   const next = commandsOf(HAND_WRITTEN).filter((command) => command.id !== 'vscode');
   const result = applyCommands(HAND_WRITTEN, next);
@@ -6109,7 +6123,9 @@ import { parseConfigToml, renderCommandBlock } from './toml-config.mjs';
 // indented variant stay in opaque text, which is what lets a user comment a
 // command out and have it survive every popup save.
 const HEADER = /^\[\[commands\]\][ \t]*$/;
-const COMPARED_KEYS = Object.freeze(['id', 'label', 'type', 'command', 'cwd', 'description']);
+// Every field a command has. Omitting one would make a change to it look like
+// no change at all, and the old block text would be reused verbatim.
+const COMPARED_KEYS = Object.freeze(['id', 'slot', 'label', 'type', 'command', 'cwd', 'description']);
 
 function isBlankOrComment(line) {
   const trimmed = line.trim();

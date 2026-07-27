@@ -5,7 +5,9 @@ import { parseConfigToml, renderCommandBlock } from './toml-config.mjs';
 // indented variant stay in opaque text, which is what lets a user comment a
 // command out and have it survive every popup save.
 const HEADER = /^\[\[commands\]\][ \t]*$/;
-const COMPARED_KEYS = Object.freeze(['id', 'label', 'type', 'command', 'cwd', 'description']);
+// Every field a command has. Omitting one would make a change to it look like
+// no change at all, and the old block text would be reused verbatim.
+const COMPARED_KEYS = Object.freeze(['id', 'slot', 'label', 'type', 'command', 'cwd', 'description']);
 
 function isBlankOrComment(line) {
   const trimmed = line.trim();
