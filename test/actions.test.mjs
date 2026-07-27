@@ -57,6 +57,8 @@ test('openPalette forwards the action invocation context into the popup', async 
   assert.deepEqual(JSON.parse(envArg.slice('COMMAND_CENTER_CONTEXT_JSON='.length)), {
     focusedPaneCwd: '/Users/cdragon/repo',
     workspaceCwd: '/Users/cdragon',
+    focusedPaneId: 'wE:p3',
+    focusedPaneAgent: null,
   });
 });
 
@@ -74,6 +76,8 @@ test('openPalette still opens when there is no context to forward', async () => 
   assert.deepEqual(JSON.parse(envArg.slice('COMMAND_CENTER_CONTEXT_JSON='.length)), {
     focusedPaneCwd: null,
     workspaceCwd: null,
+    focusedPaneId: null,
+    focusedPaneAgent: null,
   });
 });
 

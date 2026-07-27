@@ -10,7 +10,9 @@ test('readContext prefers the forwarded context over the pane context', () => {
     COMMAND_CENTER_CONTEXT_JSON: JSON.stringify({ focusedPaneCwd: '/a', workspaceCwd: '/b' }),
     HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_cwd: '/c', workspace_cwd: '/d' }),
   });
-  assert.deepEqual(context, { focusedPaneCwd: '/a', workspaceCwd: '/b' });
+  assert.deepEqual(context, {
+    focusedPaneCwd: '/a', workspaceCwd: '/b', focusedPaneId: null, focusedPaneAgent: null,
+  });
 });
 
 test('readContext reads herdr snake_case fields', () => {
@@ -21,12 +23,19 @@ test('readContext reads herdr snake_case fields', () => {
       focused_pane_id: 'wE:p3',
     }),
   });
-  assert.deepEqual(context, { focusedPaneCwd: '/Users/cdragon/repo', workspaceCwd: '/Users/cdragon' });
+  assert.deepEqual(context, {
+    focusedPaneCwd: '/Users/cdragon/repo',
+    workspaceCwd: '/Users/cdragon',
+    focusedPaneId: 'wE:p3',
+    focusedPaneAgent: null,
+  });
 });
 
 test('readContext falls back to the active pane cwd env', () => {
   const context = readContext({ HERDR_ACTIVE_PANE_CWD: '/Users/cdragon/fallback' });
-  assert.deepEqual(context, { focusedPaneCwd: '/Users/cdragon/fallback', workspaceCwd: null });
+  assert.deepEqual(context, {
+    focusedPaneCwd: '/Users/cdragon/fallback', workspaceCwd: null, focusedPaneId: null, focusedPaneAgent: null,
+  });
 });
 
 test('readContext tolerates missing, malformed, and non-object JSON', () => {
@@ -37,7 +46,9 @@ test('readContext tolerates missing, malformed, and non-object JSON', () => {
     { HERDR_PLUGIN_CONTEXT_JSON: 'null' },
     { HERDR_PLUGIN_CONTEXT_JSON: `"${'a'.repeat(200_000)}"` },
   ]) {
-    assert.deepEqual(readContext(env), { focusedPaneCwd: null, workspaceCwd: null });
+    assert.deepEqual(readContext(env), {
+      focusedPaneCwd: null, workspaceCwd: null, focusedPaneId: null, focusedPaneAgent: null,
+    });
   }
 });
 
@@ -45,11 +56,40 @@ test('readContext drops relative and NUL-bearing paths', () => {
   const context = readContext({
     HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_cwd: 'rel/ative', workspace_cwd: '/ok\u0000' }),
   });
-  assert.deepEqual(context, { focusedPaneCwd: null, workspaceCwd: null });
+  assert.deepEqual(context, {
+    focusedPaneCwd: null, workspaceCwd: null, focusedPaneId: null, focusedPaneAgent: null,
+  });
+});
+
+test('readContext carries the focused pane and whichever agent owns it', () => {
+  const context = readContext({
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+      focused_pane_id: 'wE:p3',
+      focused_pane_agent: 'claude',
+      focused_pane_cwd: '/Users/cdragon/repo',
+    }),
+  });
+  assert.equal(context.focusedPaneId, 'wE:p3');
+  assert.equal(context.focusedPaneAgent, 'claude');
+});
+
+test('readContext reports no agent as null rather than a string', () => {
+  const context = readContext({
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'wC:p7', focused_pane_agent: null }),
+  });
+  assert.equal(context.focusedPaneId, 'wC:p7');
+  assert.equal(context.focusedPaneAgent, null);
 });
 
 test('serializeContext round-trips through readContext', () => {
-  const context = { focusedPaneCwd: '/a', workspaceCwd: '/b' };
+  const context = { focusedPaneCwd: '/a', workspaceCwd: '/b', focusedPaneId: null, focusedPaneAgent: null };
+  assert.deepEqual(readContext({ COMMAND_CENTER_CONTEXT_JSON: serializeContext(context) }), context);
+});
+
+test('serializeContext round-trips the pane fields', () => {
+  const context = {
+    focusedPaneCwd: '/a', workspaceCwd: '/b', focusedPaneId: 'wE:p3', focusedPaneAgent: 'claude',
+  };
   assert.deepEqual(readContext({ COMMAND_CENTER_CONTEXT_JSON: serializeContext(context) }), context);
 });
 

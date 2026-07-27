@@ -9,6 +9,10 @@ function usableDir(value) {
   return value;
 }
 
+function usableId(value) {
+  return typeof value === 'string' && value.length > 0 && !value.includes('\u0000') ? value : null;
+}
+
 function parseContextJson(raw) {
   if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_CONTEXT_BYTES) return null;
   try {
@@ -20,9 +24,9 @@ function parseContextJson(raw) {
   }
 }
 
-// Only cwds are carried. The popup does not need pane ids: shell commands need a
-// directory, and `herdr plugin action invoke` resolves the focused pane itself —
-// which is exactly why the runner waits for the popup to close first.
+// Cwds and the pane fields are carried. `pane` commands need to know which pane
+// to type into, and whether an agent owns it — shell commands only need a
+// directory, and `herdr plugin action invoke` resolves the focused pane itself.
 export function readContext(env = process.env) {
   const forwarded = parseContextJson(env.COMMAND_CENTER_CONTEXT_JSON);
   const injected = parseContextJson(env.HERDR_PLUGIN_CONTEXT_JSON);
@@ -32,6 +36,13 @@ export function readContext(env = process.env) {
       ?? usableDir(source.focused_pane_cwd)
       ?? usableDir(env.HERDR_ACTIVE_PANE_CWD),
     workspaceCwd: usableDir(source.workspaceCwd) ?? usableDir(source.workspace_cwd),
+    // Carried for `pane` commands: which pane to type into, and whether an agent
+    // owns it. HERDR_PANE_ID is deliberately not a fallback — inside the popup
+    // that is the popup's own pane.
+    focusedPaneId: usableId(source.focusedPaneId)
+      ?? usableId(source.focused_pane_id)
+      ?? usableId(env.HERDR_ACTIVE_PANE_ID),
+    focusedPaneAgent: usableId(source.focusedPaneAgent) ?? usableId(source.focused_pane_agent),
   };
 }
 
@@ -39,6 +50,8 @@ export function serializeContext(context) {
   return JSON.stringify({
     focusedPaneCwd: usableDir(context?.focusedPaneCwd),
     workspaceCwd: usableDir(context?.workspaceCwd),
+    focusedPaneId: usableId(context?.focusedPaneId),
+    focusedPaneAgent: usableId(context?.focusedPaneAgent),
   });
 }
 

@@ -25,6 +25,16 @@ const TASK_KINDS = new Set(['run', 'open-config']);
 
 const defaultSleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
+const herdrNotify = (bin, env, execFile) => async (title, body) => {
+  try {
+    await execFile(bin, ['notification', 'show', title, '--body', body], {
+      env, encoding: 'utf8', timeout: 5_000, maxBuffer: 1_048_576, shell: false,
+    });
+  } catch {
+    // A failed notification must not mask the execution error it describes.
+  }
+};
+
 function usablePath(value) {
   return typeof value === 'string' && value.length > 0 && isAbsolute(value) && !value.includes('\u0000');
 }
@@ -88,15 +98,17 @@ export async function runPending({
       });
       return 0;
     }
+    const herdrBin = env.HERDR_BIN_PATH || 'herdr';
     await executeCommand(task.command, {
       context: task.context,
-      herdrBin: env.HERDR_BIN_PATH || 'herdr',
+      herdrBin,
       shell: env.SHELL,
       env,
       spawn,
       execFile,
       log: logger.write,
       sleep,
+      notify: herdrNotify(herdrBin, env, execFile),
     });
     return 0;
   } catch (error) {

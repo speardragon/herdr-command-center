@@ -14,7 +14,9 @@ import {
   createFakeStdout,
 } from './helpers/fake-tty.mjs';
 
-const CONTEXT = { focusedPaneCwd: '/Users/cdragon/repo', workspaceCwd: '/Users/cdragon' };
+const CONTEXT = {
+  focusedPaneCwd: '/Users/cdragon/repo', workspaceCwd: '/Users/cdragon', focusedPaneId: null, focusedPaneAgent: null,
+};
 
 async function scratch() {
   const dir = await mkdtemp(join(tmpdir(), 'cc-popup-'));

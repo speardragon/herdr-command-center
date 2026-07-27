@@ -1,7 +1,7 @@
 import { isAbsolute } from 'node:path';
 
 export const SCHEMA_VERSION = 1;
-export const COMMAND_TYPES = Object.freeze(['shell', 'plugin_action']);
+export const COMMAND_TYPES = Object.freeze(['shell', 'pane', 'plugin_action']);
 export const CWD_MODES = Object.freeze(['focused', 'workspace']);
 
 const MAX_LABEL_LENGTH = 80;

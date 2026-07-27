@@ -162,11 +162,11 @@ test('left, right, and space cycle the type and cwd choices', () => {
   let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab', 'tab');
   assert.equal(view.form.fields.type, 'shell');
   view = reduceKey(view, 'right');
-  assert.equal(view.form.fields.type, 'plugin_action');
+  assert.equal(view.form.fields.type, 'pane');
   view = reduceKey(view, 'space');
-  assert.equal(view.form.fields.type, 'shell');
-  view = reduceKey(view, 'left');
   assert.equal(view.form.fields.type, 'plugin_action');
+  view = reduceKey(view, 'left');
+  assert.equal(view.form.fields.type, 'pane');
 
   let cwdView = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab', 'tab', 'tab', 'tab');
   assert.equal(cwdView.form.fields.cwd, 'focused');
@@ -235,7 +235,7 @@ test('enter on an invalid form reports the reason and stays in the form', () => 
 test('a plugin_action form rejects a bare action id', () => {
   let view = reduceKey(createView({ doc: doc() }), 'A');
   for (const key of [...'Explorer']) view = reduceKey(view, key);
-  view = press(view, 'tab', 'tab', 'right', 'tab');
+  view = press(view, 'tab', 'tab', 'right', 'right', 'tab');
   for (const key of [...'open']) view = reduceKey(view, key);
   view = reduceKey(view, 'enter');
   assert.equal(view.mode, 'form');

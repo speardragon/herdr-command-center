@@ -19,7 +19,7 @@ import {
 
 test('exported vocabularies are frozen and complete', () => {
   assert.equal(SCHEMA_VERSION, 1);
-  assert.deepEqual([...COMMAND_TYPES], ['shell', 'plugin_action']);
+  assert.deepEqual([...COMMAND_TYPES], ['shell', 'pane', 'plugin_action']);
   assert.deepEqual([...CWD_MODES], ['focused', 'workspace']);
   assert.ok(Object.isFrozen(COMMAND_TYPES));
 });
@@ -111,6 +111,12 @@ test('normalizeCommand validates plugin_action targets', () => {
     () => normalizeCommand({ label: 'Broken', type: 'plugin_action', command: 'nope' }),
     (error) => error instanceof ConfigError && /plugin_id\.action_id/u.test(error.message),
   );
+});
+
+test('a pane command is validated like a shell command', () => {
+  const command = normalizeCommand({ label: 'Echo', type: 'pane', command: 'echo hello' });
+  assert.equal(command.type, 'pane');
+  assert.equal(command.command, 'echo hello');
 });
 
 test('normalizeCommand rejects every malformed field with a readable message', () => {

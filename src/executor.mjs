@@ -32,6 +32,19 @@ export function buildShellSpawn(command, { cwd, shell } = {}) {
   };
 }
 
+// Single quotes are the only shell quoting with no escapes inside, so a path can
+// be wrapped verbatim once its own single quotes are closed, escaped and reopened.
+export function shellQuote(value) {
+  return `'${String(value).split("'").join("'\\''")}'`;
+}
+
+// Typed input runs wherever that shell already is, so the command's own cwd would
+// be ignored. A subshell honours it without leaving the user's shell somewhere
+// they did not put it.
+export function buildPaneLine(command, context) {
+  return `(cd ${shellQuote(resolveCwd(command, context))} && ${command.command})`;
+}
+
 export function buildPluginActionArgs(command) {
   const { pluginId, actionId } = parsePluginActionTarget(command.command);
   return ['plugin', 'action', 'invoke', actionId, '--plugin', pluginId];
@@ -54,6 +67,39 @@ async function runShell(command, { context, shell, env, spawn, log }) {
   child?.unref?.();
   if (typeof log === 'function') await log('shell', { id: command.id, cwd, command: command.command });
   return { status: 'started' };
+}
+
+async function runInPane(command, { context, herdrBin, env, execFile, log, notify }) {
+  const paneId = context?.focusedPaneId;
+  const agent = context?.focusedPaneAgent;
+  if (!paneId) {
+    if (typeof log === 'function') await log('pane_no_target', { id: command.id });
+    throw new ExecutionError('there is no focused pane to run this in');
+  }
+  // `herdr pane run` types the line into the pane and presses Enter. When an agent
+  // owns that pane, the line would be submitted to the agent as a prompt instead
+  // of to a shell, so refuse and say so rather than prompt someone's Claude.
+  if (agent) {
+    if (typeof log === 'function') await log('pane_busy_with_agent', { id: command.id, agent });
+    if (typeof notify === 'function') {
+      await notify(
+        'Command Center',
+        `"${command.label}" was not run: the focused pane is running ${agent}, and typing into it would prompt the agent. Focus a shell pane and try again.`,
+      );
+    }
+    throw new ExecutionError(`the focused pane is running ${agent}, not a shell`);
+  }
+  await execFile(herdrBin, ['pane', 'run', paneId, buildPaneLine(command, context)], {
+    env,
+    encoding: 'utf8',
+    timeout: CLI_TIMEOUT_MS,
+    maxBuffer: MAX_BUFFER_BYTES,
+    shell: false,
+  });
+  if (typeof log === 'function') {
+    await log('pane', { id: command.id, paneId, cwd: resolveCwd(command, context) });
+  }
+  return { status: 'sent' };
 }
 
 async function runPluginAction(command, { herdrBin, env, execFile, log, sleep, attempts }) {
@@ -104,11 +150,15 @@ export async function executeCommand(command, {
   log,
   sleep = defaultSleep,
   attempts = DEFAULT_ATTEMPTS,
+  notify,
 } = {}) {
   if (typeof spawn !== 'function') throw new TypeError('spawn is required');
   if (typeof execFile !== 'function') throw new TypeError('execFile is required');
   if (command?.type === 'shell') {
     return runShell(command, { context, shell, env, spawn, log });
+  }
+  if (command?.type === 'pane') {
+    return runInPane(command, { context, herdrBin, env, execFile, log, notify });
   }
   if (command?.type === 'plugin_action') {
     return runPluginAction(command, { herdrBin, env, execFile, log, sleep, attempts });

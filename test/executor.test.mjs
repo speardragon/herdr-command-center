@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildPaneLine,
   buildPluginActionArgs,
   buildShellSpawn,
   executeCommand,
   ExecutionError,
+  shellQuote,
   UI_BUSY_CODE,
 } from '../src/executor.mjs';
 
@@ -35,7 +37,88 @@ function actionCommand(overrides = {}) {
   };
 }
 
+function paneCommand(overrides = {}) {
+  return {
+    id: 'echo', slot: '1', label: 'Echo', type: 'pane',
+    command: 'echo hello', cwd: 'focused', description: '', ...overrides,
+  };
+}
+
 const noSleep = async () => {};
+
+test('shellQuote makes any directory safe to paste into a shell line', () => {
+  assert.equal(shellQuote('/tmp/plain'), "'/tmp/plain'");
+  assert.equal(shellQuote('/tmp/with space'), "'/tmp/with space'");
+  assert.equal(shellQuote("/tmp/it's"), "'/tmp/it'\\''s'");
+  assert.equal(shellQuote('/tmp/$HOME`x`'), "'/tmp/$HOME`x`'");
+});
+
+test('buildPaneLine runs the command in the resolved cwd via a subshell', () => {
+  // Typed input would otherwise run wherever that shell already is, silently
+  // ignoring the command's own cwd.
+  assert.equal(
+    buildPaneLine(paneCommand(), { focusedPaneCwd: '/Users/cdragon/repo', workspaceCwd: '/Users/cdragon' }),
+    "(cd '/Users/cdragon/repo' && echo hello)",
+  );
+  assert.equal(
+    buildPaneLine(paneCommand({ cwd: 'workspace' }), { focusedPaneCwd: '/a', workspaceCwd: '/b' }),
+    "(cd '/b' && echo hello)",
+  );
+});
+
+test('a pane command is typed into the focused pane so its output shows there', async () => {
+  const calls = [];
+  const result = await executeCommand(paneCommand(), {
+    context: { focusedPaneId: 'wC:p7', focusedPaneAgent: null, focusedPaneCwd: '/Users/cdragon/repo' },
+    herdrBin: '/opt/homebrew/bin/herdr',
+    spawn: () => { throw new Error('a pane command must not spawn'); },
+    execFile: async (bin, args) => { calls.push({ bin, args }); return { stdout: '{}', stderr: '' }; },
+    sleep: noSleep,
+  });
+  assert.deepEqual(result, { status: 'sent' });
+  assert.deepEqual(calls, [{
+    bin: '/opt/homebrew/bin/herdr',
+    args: ['pane', 'run', 'wC:p7', "(cd '/Users/cdragon/repo' && echo hello)"],
+  }]);
+});
+
+test('a pane command keeps shell metacharacters in one argument', async () => {
+  let args = null;
+  await executeCommand(paneCommand({ command: 'printf "a\\nb\\n" | wc -l' }), {
+    context: { focusedPaneId: 'wC:p7', focusedPaneAgent: null, focusedPaneCwd: '/r' },
+    spawn: () => {},
+    execFile: async (bin, callArgs) => { args = callArgs; return { stdout: '{}' }; },
+    sleep: noSleep,
+  });
+  assert.equal(args.at(-1), "(cd '/r' && printf \"a\\nb\\n\" | wc -l)");
+  assert.equal(args.length, 4, 'the line is one argument, not split on spaces');
+});
+
+test('a pane command refuses to type into a pane an agent owns', async () => {
+  const notes = [];
+  await assert.rejects(executeCommand(paneCommand(), {
+    context: { focusedPaneId: 'wE:p3', focusedPaneAgent: 'claude' },
+    spawn: () => {},
+    execFile: async () => { throw new Error('must not be called'); },
+    notify: async (title, body) => { notes.push([title, body]); },
+    sleep: noSleep,
+  }), (error) => {
+    assert.ok(error instanceof ExecutionError);
+    assert.match(error.message, /claude/u);
+    return true;
+  });
+  assert.equal(notes.length, 1, 'the user is told why nothing happened');
+  assert.match(notes[0][1], /claude/u);
+});
+
+test('a pane command refuses when there is no pane to type into', async () => {
+  await assert.rejects(executeCommand(paneCommand(), {
+    context: { focusedPaneId: null, focusedPaneAgent: null },
+    spawn: () => {},
+    execFile: async () => { throw new Error('must not be called'); },
+    sleep: noSleep,
+  }), ExecutionError);
+});
 
 test('UI_BUSY_CODE is the herdr error code we retry on', () => {
   assert.equal(UI_BUSY_CODE, 'ui_busy');
