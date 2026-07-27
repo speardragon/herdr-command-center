@@ -15,6 +15,7 @@ const FORM_FOOTER = 'type to edit · tab/↑↓ field · ←→ change · enter 
 const CONFIRM_FOOTER = 'y delete · any other key cancels';
 const ERROR_FOOTER = 'o edit file · esc close';
 const EDITOR_FOOTER = '↑↓ move · enter open · 1-9 open · esc cancel';
+const IMPORT_FOOTER = '↑↓ move · enter set up · esc cancel';
 
 const FIELD_LABELS = Object.freeze({
   label: 'Label',
@@ -155,12 +156,38 @@ function editorPickBody(view, width, budget, color) {
   return lines.slice(0, Math.max(1, budget));
 }
 
+function importBody(view, width, budget, color) {
+  const entries = view.importEntries ?? [];
+  const title = clipLine(`Command Center · import from herdr config · ${entries.length} found`, width);
+  const lines = [color ? styles.bold(title) : title, ''];
+  if (entries.length === 0) {
+    lines.push(...wrap('No [[keys.command]] entries found in your herdr config.toml.', width));
+    return lines.slice(0, Math.max(1, budget));
+  }
+  const rowBudget = Math.max(1, budget - lines.length - 2);
+  entries.slice(0, rowBudget).forEach((entry, index) => {
+    const marker = index === view.importCursor ? '›' : ' ';
+    const note = entry.reason ? '  (unsupported)' : (entry.already ? '  (already added)' : '');
+    const line = clipLine(`${marker} ${entry.key}  ${entry.label}${note}`, width);
+    const styled = color && index === view.importCursor
+      ? styles.bold(styles.cyan(line))
+      : (color && (entry.reason || entry.already) ? styles.dim(line) : line);
+    lines.push(styled);
+  });
+  const chosen = entries[Math.max(0, Math.min(entries.length - 1, view.importCursor))];
+  lines.push('');
+  const detail = clipLine(`${chosen.type ?? '—'} · ${chosen.command}`, width);
+  lines.push(color ? styles.dim(detail) : detail);
+  return lines;
+}
+
 const BODIES = Object.freeze({
   list: listBody,
   form: formBody,
   'confirm-delete': confirmBody,
   error: errorBody,
   'editor-pick': editorPickBody,
+  import: importBody,
 });
 
 const FOOTERS = Object.freeze({
@@ -169,6 +196,7 @@ const FOOTERS = Object.freeze({
   'confirm-delete': CONFIRM_FOOTER,
   error: ERROR_FOOTER,
   'editor-pick': EDITOR_FOOTER,
+  import: IMPORT_FOOTER,
 });
 
 export function renderLines(view, size = {}) {

@@ -454,3 +454,27 @@ test('an auto-detected editor opens without asking, but a configured list asks',
   assert.deepEqual(asked.spawns, [], 'nothing opened until a choice was made');
   assert.ok(asked.stdout.frames.some((f) => f.includes('Open commands.toml with')));
 });
+
+test('I lists the commands in the herdr config and adds the chosen one', async () => {
+  const { dir, file } = await scratch();
+  const herdrConfig = join(dir, 'herdr-config.toml');
+  await writeFile(herdrConfig, [
+    '[[keys.command]]',
+    'key = "prefix+g"',
+    'type = "shell"',
+    'command = "lazygit"',
+    'description = "git TUI"',
+    '',
+  ].join('\n'), 'utf8');
+
+  const { code, stdout } = await harness(
+    ['I', '\r', '\r', '\u001b'],
+    { dir, extraEnv: { HERDR_CONFIG_PATH: herdrConfig } },
+  );
+  assert.equal(code, 0);
+  assert.ok(stdout.frames.some((frame) => frame.includes('import from herdr config')));
+  assert.ok(stdout.frames.some((frame) => frame.includes('prefix+g')));
+  const written = await readFile(file, 'utf8');
+  assert.ok(written.includes('command = "lazygit"'), written);
+  assert.ok(written.includes('label = "git TUI"'), written);
+});

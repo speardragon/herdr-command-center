@@ -12,12 +12,13 @@ import { promisify } from 'node:util';
 
 import { readContext } from '../src/context.mjs';
 import { resolveEditors } from '../src/editor.mjs';
+import { herdrConfigPath, readImportable } from '../src/herdr-config.mjs';
 import { createKeyDecoder } from '../src/keys.mjs';
 import { commandsPath, resolveConfigDir, resolveStateDir, runLogPath } from '../src/paths.mjs';
 import { gridColumns, renderView, textCursor } from '../src/render.mjs';
 import { ConfigError } from '../src/schema.mjs';
 import { ensureStore, saveStore } from '../src/store.mjs';
-import { beginEditorPick, createView, reduceKey } from '../src/view.mjs';
+import { beginEditorPick, beginImport, createView, reduceKey } from '../src/view.mjs';
 
 const execFileAsync = promisify(execFileCallback);
 
@@ -203,6 +204,11 @@ export async function runPopup({
             continue;
           }
           view = beginEditorPick(view, candidates);
+          draw();
+          continue;
+        }
+        if (effect.type === 'load-import') {
+          view = beginImport(view, await readImportable(herdrConfigPath(env)));
           draw();
           continue;
         }

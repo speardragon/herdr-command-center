@@ -71,6 +71,7 @@ export function createView({ doc, error = null, cursor = 0 } = {}) {
     formError: null,
     cursor: clampCursor(cursor, doc.commands?.length ?? 0),
     form: null,
+    importEntries: [],
     importCursor: 0,
     editorChoices: [],
     editorCursor: 0,
@@ -87,6 +88,56 @@ export function beginEditorPick(view, candidates) {
     editorChoices: [...candidates],
     editorCursor: 0,
     effect: null,
+  };
+}
+
+// The reducer does no I/O, so the popup reads the herdr config and hands the
+// entries in. `already` marks what this plugin has registered, so the user is not
+// offered a duplicate without knowing it.
+export function beginImport(view, entries) {
+  const registered = new Set((view.doc.commands ?? []).map((command) => `${command.type} ${command.command}`));
+  return {
+    ...view,
+    mode: 'import',
+    importEntries: entries.map((entry) => ({
+      ...entry,
+      already: registered.has(`${entry.type} ${entry.command}`),
+    })),
+    importCursor: 0,
+    effect: null,
+  };
+}
+
+function reduceImport(view, key) {
+  const entries = view.importEntries ?? [];
+  if (key === 'escape') return { ...view, mode: 'list', importEntries: [], importCursor: 0 };
+  if (key === 'up') return { ...view, importCursor: step(view.importCursor, -1, entries.length) };
+  if (key === 'down') return { ...view, importCursor: step(view.importCursor, 1, entries.length) };
+  if (key !== 'enter') return view;
+  const entry = entries[view.importCursor];
+  if (!entry || !entry.type) return view;
+  // Hand it to the ordinary add form, prefilled: the user still picks the slot and
+  // can fix the label before anything is written.
+  const available = freeSlots(view.doc);
+  return {
+    ...view,
+    mode: 'form',
+    importEntries: [],
+    importCursor: 0,
+    formError: null,
+    form: {
+      commandId: null,
+      fieldIndex: 0,
+      slotChoices: available,
+      fields: {
+        label: entry.label,
+        slot: available[0] ?? '',
+        type: entry.type,
+        command: entry.command,
+        cwd: 'focused',
+        description: entry.description,
+      },
+    },
   };
 }
 
@@ -258,6 +309,7 @@ export function reduceKey(view, key, { columns = 1 } = {}) {
   if (cleared.mode === 'error') return reduceError(cleared, key);
   if (cleared.mode === 'confirm-delete') return reduceConfirm(cleared, key);
   if (cleared.mode === 'editor-pick') return reduceEditorPick(cleared, key);
+  if (cleared.mode === 'import') return reduceImport(cleared, key);
   if (cleared.mode === 'form') return reduceForm(cleared, key);
   return reduceList(cleared, key, columns);
 }

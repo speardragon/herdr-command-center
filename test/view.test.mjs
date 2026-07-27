@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { SLOT_KEYS } from '../src/schema.mjs';
-import { CHOICE_FIELDS, createView, FORM_FIELDS, MODES, reduceKey } from '../src/view.mjs';
+import { beginImport, CHOICE_FIELDS, createView, FORM_FIELDS, MODES, reduceKey } from '../src/view.mjs';
 
 function doc(labels = ['One', 'Two', 'Three']) {
   return {
@@ -402,4 +402,43 @@ test('j and k no longer navigate, because they are slots', () => {
   const view = createView({ doc: doc() });
   assert.equal(reduceKey(view, 'j').cursor, 0);
   assert.equal(reduceKey(view, 'k').cursor, 0);
+});
+
+test('beginImport marks what is already registered', () => {
+  const view = createView({ doc: doc(['One']) });
+  const imported = beginImport(view, [
+    { key: 'prefix+x', label: 'One', type: 'shell', command: 'run-0', description: '', reason: null },
+    { key: 'prefix+y', label: 'New', type: 'shell', command: 'brand-new', description: '', reason: null },
+  ]);
+  assert.equal(imported.mode, 'import');
+  assert.deepEqual(imported.importEntries.map((entry) => entry.already), [true, false]);
+});
+
+test('choosing an import entry opens a prefilled add form', () => {
+  const view = beginImport(createView({ doc: doc() }), [
+    { key: 'prefix+g', label: 'Lazygit', type: 'pane', command: 'lazygit', description: 'git TUI', reason: null },
+  ]);
+  const form = reduceKey(view, 'enter');
+  assert.equal(form.mode, 'form');
+  assert.equal(form.form.commandId, null, 'it is an add, not an edit');
+  assert.equal(form.form.fields.label, 'Lazygit');
+  assert.equal(form.form.fields.type, 'pane');
+  assert.equal(form.form.fields.command, 'lazygit');
+  assert.equal(form.form.fields.description, 'git TUI');
+  assert.equal(form.form.fields.slot, '4', 'the first free slot');
+  assert.equal(form.effect, null, 'nothing is written until the form is saved');
+});
+
+test('an unmappable import entry cannot be chosen', () => {
+  const view = beginImport(createView({ doc: doc() }), [
+    { key: 'prefix+b', label: 'x', type: null, command: 'whatever', description: '', reason: 'no equivalent' },
+  ]);
+  assert.equal(reduceKey(view, 'enter').mode, 'import');
+});
+
+test('escape leaves the import list without changing anything', () => {
+  const view = beginImport(createView({ doc: doc() }), []);
+  const back = reduceKey(view, 'escape');
+  assert.equal(back.mode, 'list');
+  assert.equal(back.effect, null);
 });
