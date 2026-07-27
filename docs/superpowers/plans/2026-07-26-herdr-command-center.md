@@ -1402,7 +1402,7 @@ export async function ensureStore(file) {
 - [ ] **Step 8: Run the store tests**
 
 Run: `node --test test/store.test.mjs`
-Expected: PASS — 10 tests.
+Expected: PASS — 11 tests.
 
 - [ ] **Step 9: Run the whole suite**
 
@@ -4898,7 +4898,7 @@ if (await invokedAsMain()) {
 - [ ] **Step 5: Run the action tests**
 
 Run: `node --test test/actions.test.mjs`
-Expected: PASS — 10 tests.
+Expected: PASS — 11 tests.
 
 - [ ] **Step 6: Run the whole suite**
 
@@ -7034,3 +7034,2172 @@ the change is what exposed it.
 captured output and draws the caret, so `docs/popup-form.png` shows the affordance
 this task adds. The generator only draws a caret where the popup actually
 addressed one, which keeps the picture honest.
+
+---
+
+# Addendum 2: slots, a grid, editor choice, pane output, and importing
+
+> **Status:** Tasks 1–17 shipped a 9-command list keyed by absolute position.
+> Tasks 18–23 turn that into 36 explicit slots in a grid, make the editor a
+> choice, add a command type whose output lands in the pane you are looking at,
+> and let you pull commands out of `~/.config/herdr/config.toml`.
+
+## Verified before planning
+
+| Fact | Value |
+| --- | --- |
+| Running a command *in* a pane | `herdr pane run <PANE_ID> '<shell line>'` maps to `pane.send_input`: it types the line into that pane's shell and presses Enter, so output appears there. Shell metacharacters survive — `printf "a\nb\nc\n" \| wc -l` printed `3`. |
+| The danger in that | Panes report an `agent`. On this machine most panes run `claude`, and typing into one submits the text to the **agent**, not a shell. `focused_pane_agent` in the invocation context is how we refuse. |
+| Popup size by percentage | Accepted: `width = "90%"`, `height = "80%"` linked successfully and herdr echoed them back verbatim. |
+| Notifying the user | `herdr notification show <TITLE> --body <TEXT>` (already used by this plugin family). |
+
+## The new key contract
+
+Chosen deliberately over reserving letters or a leader key: **lowercase and digits
+run, uppercase acts.** All 36 slots stay available and `Shift+A` = Add is
+mnemonic.
+
+| Keys | Meaning in the list |
+| --- | --- |
+| `1`–`9`, `0`, `a`–`z` | run the command in that slot |
+| `↑` `↓` `←` `→` | move within the grid |
+| `Enter` | run the highlighted command |
+| `A` | add a command |
+| `E` | edit the highlighted command |
+| `D` | delete the highlighted command |
+| `O` | open the config file |
+| `I` | import from `~/.config/herdr/config.toml` |
+| `Esc` / `Ctrl-C` | close |
+
+**Two consequences to carry into the docs.** `j`/`k` are slots now, so grid
+movement is arrow keys only. `q` is a slot now, so `Esc` is the only way to close.
+
+## Addendum 2 constraints
+
+- Slots are `SLOT_KEYS` = `'1234567890abcdefghijklmnopqrstuvwxyz'`, in that order. Assignment walks that order, so the first nine commands still land on `1`–`9` exactly as before.
+- Every command has exactly one slot. `MAX_COMMANDS` drops from 200 to 36, because past 36 the one-keystroke premise is gone and a silent 37th command that no key reaches would be worse than an error.
+- `slot` is normalized to lowercase: uppercase is the action namespace, so storing `"G"` would imply a key that runs nothing.
+- `editor` keeps its key name but changes meaning: **each array entry is one candidate command line**, not one argv word. `editor = ["code"]` behaves exactly as before; `editor = ["code", "vim"]` now offers a choice, which is what it looks like it should do. An empty or absent `editor` auto-detects.
+- `reduceKey` gains a third parameter, `{ columns }`. The reducer stays free of layout knowledge; the popup passes the grid width in from the renderer.
+
+---
+
+## Task 18: Slots
+
+**Files:**
+- Modify: `src/schema.mjs`
+- Test: `test/schema.test.mjs`
+
+**Interfaces:**
+- Produces, from `src/schema.mjs`:
+  - `SLOT_KEYS: string` — `'1234567890abcdefghijklmnopqrstuvwxyz'`
+  - `MAX_COMMANDS: number` — `36`, now exported so the renderer and importer can reason about capacity
+  - `nextFreeSlot(usedSlots: Iterable<string>): string | null`
+  - `normalizeCommand(value, { existingIds?, existingSlots? })` — gains `slot` in its output and `existingSlots` in its options
+- `Command` becomes `{ id, slot, label, type, command, cwd, description }`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `test/schema.test.mjs`, and add `MAX_COMMANDS`, `SLOT_KEYS` and
+`nextFreeSlot` to its import list:
+
+```js
+test('SLOT_KEYS starts at 1 so the first nine commands keep their old numbers', () => {
+  assert.equal(SLOT_KEYS.slice(0, 10), '1234567890');
+  assert.equal(SLOT_KEYS.length, 36);
+  assert.equal(new Set(SLOT_KEYS).size, 36, 'no slot key appears twice');
+  assert.equal(MAX_COMMANDS, SLOT_KEYS.length);
+});
+
+test('nextFreeSlot walks SLOT_KEYS in order', () => {
+  assert.equal(nextFreeSlot([]), '1');
+  assert.equal(nextFreeSlot(['1', '2']), '3');
+  assert.equal(nextFreeSlot([...'123456789']), '0');
+  assert.equal(nextFreeSlot([...'1234567890']), 'a');
+  assert.equal(nextFreeSlot([...SLOT_KEYS]), null);
+});
+
+test('normalizeCommand accepts an explicit slot and lowercases it', () => {
+  assert.equal(normalizeCommand({ slot: 'g', label: 'a', type: 'shell', command: 'ls' }).slot, 'g');
+  // uppercase is the action namespace, so a stored uppercase slot would be dead
+  assert.equal(normalizeCommand({ slot: 'G', label: 'a', type: 'shell', command: 'ls' }).slot, 'g');
+});
+
+test('normalizeCommand assigns the first free slot when none is given', () => {
+  assert.equal(normalizeCommand({ label: 'a', type: 'shell', command: 'ls' }).slot, '1');
+  assert.equal(
+    normalizeCommand({ label: 'a', type: 'shell', command: 'ls' }, { existingSlots: ['1', '2'] }).slot,
+    '3',
+  );
+});
+
+test('normalizeCommand rejects a slot that is not a single slot key', () => {
+  for (const slot of ['', 'ab', '!', ' ', 'A1']) {
+    assert.throws(
+      () => normalizeCommand({ slot, label: 'a', type: 'shell', command: 'ls' }),
+      (error) => error instanceof ConfigError && /slot/u.test(error.message),
+      JSON.stringify(slot),
+    );
+  }
+});
+
+test('normalizeConfig fills slots in document order and keeps explicit ones', () => {
+  const doc = normalizeConfig({
+    commands: [
+      { label: 'a', type: 'shell', command: 'a' },
+      { slot: 'z', label: 'b', type: 'shell', command: 'b' },
+      { label: 'c', type: 'shell', command: 'c' },
+    ],
+  });
+  assert.deepEqual(doc.commands.map((command) => command.slot), ['1', 'z', '2']);
+});
+
+test('normalizeConfig rejects two commands claiming the same slot', () => {
+  assert.throws(
+    () => normalizeConfig({
+      commands: [
+        { slot: 'g', label: 'a', type: 'shell', command: 'a' },
+        { slot: 'g', label: 'b', type: 'shell', command: 'b' },
+      ],
+    }),
+    (error) => error instanceof ConfigError && /slot "g"/u.test(error.message),
+  );
+});
+
+test('normalizeConfig refuses more commands than there are slots', () => {
+  const commands = Array.from({ length: 37 }, (unused, index) => ({
+    label: `cmd ${index}`, type: 'shell', command: 'ls',
+  }));
+  assert.throws(
+    () => normalizeConfig({ commands }),
+    (error) => error instanceof ConfigError && /36/u.test(error.message),
+  );
+});
+
+test('defaultConfig seeds slots 1 to 3', () => {
+  assert.deepEqual(defaultConfig().commands.map((command) => command.slot), ['1', '2', '3']);
+});
+```
+
+Also extend the existing `normalizeCommand fills defaults` test's expected object
+with `slot: '1'`, and the `renderCommandBlock` expectation in
+`test/toml-config.test.mjs` (Task 19 covers the render side).
+
+- [ ] **Step 2: Run it to confirm it fails**
+
+Run: `node --test test/schema.test.mjs`
+Expected: FAIL — `SLOT_KEYS` is not exported.
+
+- [ ] **Step 3: Edit `src/schema.mjs`**
+
+Replace the `MAX_COMMANDS` constant and add the slot vocabulary:
+
+```js
+// Digits first and starting at 1, so the first nine commands keep the numbers
+// they had before slots existed. Lowercase only: uppercase is the action
+// namespace in the list, so an uppercase slot would name a key that runs nothing.
+export const SLOT_KEYS = '1234567890abcdefghijklmnopqrstuvwxyz';
+export const MAX_COMMANDS = SLOT_KEYS.length;
+```
+
+Add the helper:
+
+```js
+export function nextFreeSlot(usedSlots = []) {
+  const taken = new Set(usedSlots);
+  for (const slot of SLOT_KEYS) {
+    if (!taken.has(slot)) return slot;
+  }
+  return null;
+}
+```
+
+In `normalizeCommand`, accept `existingSlots`, resolve the slot, and include it in
+the returned object. The signature becomes:
+
+```js
+export function normalizeCommand(value, { existingIds = [], existingSlots = [] } = {}) {
+```
+
+and immediately before the `return`:
+
+```js
+  let slot;
+  if (value.slot === undefined || value.slot === null || value.slot === '') {
+    slot = nextFreeSlot(existingSlots);
+    if (slot === null) {
+      throw new ConfigError(`there is no free slot left; at most ${MAX_COMMANDS} commands fit`);
+    }
+  } else {
+    if (typeof value.slot !== 'string') throw new ConfigError('slot must be a string');
+    slot = value.slot.toLowerCase();
+    if ([...slot].length !== 1 || !SLOT_KEYS.includes(slot)) {
+      throw new ConfigError(`slot must be one character from "${SLOT_KEYS}"`);
+    }
+  }
+```
+
+and add `slot,` to the returned object, directly after `id,`.
+
+In `normalizeConfig`, track slots alongside ids. Replace the loop body so it
+reads:
+
+```js
+  const commands = [];
+  const existingIds = [];
+  const existingSlots = [];
+  rawCommands.forEach((entry, index) => {
+    let normalized;
+    try {
+      normalized = normalizeCommand(entry, { existingIds, existingSlots });
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      throw new ConfigError(`commands[${index}]: ${error.message}`);
+    }
+    if (existingIds.includes(normalized.id)) {
+      throw new ConfigError(`commands[${index}]: duplicate id "${normalized.id}"`);
+    }
+    if (existingSlots.includes(normalized.slot)) {
+      throw new ConfigError(`commands[${index}]: duplicate slot "${normalized.slot}"`);
+    }
+    existingIds.push(normalized.id);
+    existingSlots.push(normalized.slot);
+    commands.push(normalized);
+  });
+```
+
+The `MAX_COMMANDS` guard already exists above the loop; only its value changed, so
+its message now reads `at most 36 entries`.
+
+Finally give each `defaultConfig()` command an explicit slot: `slot: '1'`, `'2'`,
+`'3'` respectively, placed right after each `id`.
+
+- [ ] **Step 4: Run the schema tests**
+
+Run: `node --test test/schema.test.mjs`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/schema.mjs test/schema.test.mjs
+git commit -m "feat: give every command an explicit slot key
+
+Position-derived badges topped out at nine and moved whenever the list was
+reordered. A slot is stored with the command instead, so the key that runs it is
+a property of the command rather than of where it happens to sit.
+
+SLOT_KEYS puts the digits first and starts at 1, so the first nine commands keep
+exactly the keys they had. Slots are lowercased on the way in because uppercase
+is the action namespace in the list, and an uppercase slot would name a key that
+runs nothing.
+
+The command cap drops from 200 to 36 for the same reason: a 37th command no key
+could reach is worse than being told the shelf is full."
+```
+
+---
+
+## Task 19: Grid list, uppercase actions, bigger popup
+
+**Files:**
+- Modify: `src/view.mjs`, `src/render.mjs`, `src/toml-config.mjs`, `herdr-plugin.toml`, `bin/popup.mjs`
+- Test: `test/view.test.mjs`, `test/render.test.mjs`, `test/toml-config.test.mjs`, `test/manifest.test.mjs`
+
+**Interfaces:**
+- `reduceKey(view, key, options?: { columns?: number }): View` — `columns` defaults to `1`, which makes `↑`/`↓` behave exactly like the old linear navigation.
+- `src/render.mjs` gains `gridColumns(view, size): number`.
+- `renderCommandBlock` writes `slot` immediately after `id`.
+
+- [ ] **Step 1: Write the failing view tests**
+
+Append to `test/view.test.mjs`. The existing `doc()` helper must gain slots —
+change its `commands` mapping to include `slot: SLOT_KEYS[index]` and import
+`SLOT_KEYS` from `../src/schema.mjs`.
+
+```js
+test('a lowercase key or digit runs the command in that slot', () => {
+  const view = createView({ doc: doc(['One', 'Two', 'Three']) });
+  assert.equal(reduceKey(view, '1').effect.command.label, 'One');
+  assert.equal(reduceKey(view, '3').effect.command.label, 'Three');
+  assert.equal(reduceKey(view, '4').effect, null, 'no command in slot 4');
+});
+
+test('slots are addressed by key, not by position', () => {
+  const custom = {
+    schema_version: 1,
+    editor: [],
+    commands: [
+      { id: 'deploy', slot: 'd', label: 'Deploy', type: 'shell', command: './deploy', cwd: 'focused', description: '' },
+      { id: 'logs', slot: 'l', label: 'Logs', type: 'shell', command: 'tail -f log', cwd: 'focused', description: '' },
+    ],
+  };
+  const view = createView({ doc: custom });
+  assert.equal(reduceKey(view, 'd').effect.command.label, 'Deploy');
+  assert.equal(reduceKey(view, 'l').effect.command.label, 'Logs');
+  assert.equal(reduceKey(view, '1').effect, null, 'nothing claims slot 1');
+});
+
+test('running by slot moves the cursor onto it', () => {
+  const view = createView({ doc: doc(['One', 'Two', 'Three']) });
+  assert.equal(reduceKey(view, '3').cursor, 2);
+});
+
+test('uppercase keys are the actions', () => {
+  const view = createView({ doc: doc() });
+  assert.equal(reduceKey(view, 'A').mode, 'form');
+  assert.equal(reduceKey(view, 'A').form.commandId, null);
+  assert.equal(reduceKey(view, 'E').mode, 'form');
+  assert.equal(reduceKey(view, 'E').form.commandId, 'id-0');
+  assert.equal(reduceKey(view, 'D').mode, 'confirm-delete');
+  assert.deepEqual(reduceKey(view, 'O').effect, { type: 'open-config' });
+});
+
+test('the old lowercase action keys now run their slots instead', () => {
+  // a/e/d/o are slots 11-14 in a long enough list; with three commands they do nothing
+  const view = createView({ doc: doc() });
+  for (const key of ['a', 'e', 'd', 'o', 'q']) {
+    const pressed = reduceKey(view, key);
+    assert.equal(pressed.effect, null, key);
+    assert.equal(pressed.mode, 'list', key);
+  }
+});
+
+test('escape and interrupt still close, but q does not', () => {
+  const view = createView({ doc: doc() });
+  assert.deepEqual(reduceKey(view, 'escape').effect, { type: 'close' });
+  assert.deepEqual(reduceKey(view, 'interrupt').effect, { type: 'close' });
+  assert.equal(reduceKey(view, 'q').effect, null);
+});
+
+test('arrow keys walk the grid using the column count given', () => {
+  const labels = Array.from({ length: 7 }, (unused, index) => `c${index}`);
+  const view = createView({ doc: doc(labels) });
+  const grid = { columns: 3 };
+  assert.equal(reduceKey(view, 'right', grid).cursor, 1);
+  assert.equal(reduceKey(view, 'down', grid).cursor, 3);
+  assert.equal(reduceKey(reduceKey(view, 'down', grid), 'up', grid).cursor, 0);
+  assert.equal(reduceKey(view, 'left', grid).cursor, 6, 'wraps to the last cell');
+});
+
+test('vertical movement clamps rather than skipping past the end', () => {
+  const labels = Array.from({ length: 7 }, (unused, index) => `c${index}`);
+  const view = createView({ doc: doc(labels), cursor: 5 });
+  // row 1, column 2; one row down would be index 8, which does not exist
+  assert.equal(reduceKey(view, 'down', { columns: 3 }).cursor, 6);
+});
+
+test('without a column count the arrows behave linearly', () => {
+  const view = createView({ doc: doc() });
+  assert.equal(reduceKey(view, 'down').cursor, 1);
+  assert.equal(reduceKey(view, 'up').cursor, 2);
+});
+
+test('j and k no longer navigate, because they are slots', () => {
+  const view = createView({ doc: doc() });
+  assert.equal(reduceKey(view, 'j').cursor, 0);
+  assert.equal(reduceKey(view, 'k').cursor, 0);
+});
+```
+
+- [ ] **Step 2: Run it to confirm it fails**
+
+Run: `node --test test/view.test.mjs`
+Expected: FAIL — `A` is not handled, `a` still adds.
+
+- [ ] **Step 3: Rewrite `reduceList` and `reduceKey` in `src/view.mjs`**
+
+Import the slot vocabulary at the top:
+
+```js
+import { COMMAND_TYPES, ConfigError, CWD_MODES, normalizeCommand, SLOT_KEYS } from './schema.mjs';
+```
+
+Replace `reduceList` entirely:
+
+```js
+function moveCursor(view, key, columns) {
+  const total = view.doc.commands?.length ?? 0;
+  if (total === 0) return view;
+  const span = Math.max(1, columns);
+  if (key === 'left') return { ...view, cursor: step(view.cursor, -1, total) };
+  if (key === 'right') return { ...view, cursor: step(view.cursor, 1, total) };
+  // Vertical movement clamps instead of wrapping: a partial last row would
+  // otherwise send the cursor somewhere the user cannot predict.
+  const target = key === 'up' ? view.cursor - span : view.cursor + span;
+  if (target < 0 || target >= total) return view;
+  return { ...view, cursor: target };
+}
+
+function reduceList(view, key, columns) {
+  const commands = view.doc.commands ?? [];
+  if (key === 'escape') return { ...view, effect: { type: 'close' } };
+  if (key === 'A') return { ...view, mode: 'form', formError: null, form: emptyForm(view.doc) };
+  if (key === 'O') return { ...view, effect: { type: 'open-config' } };
+  if (key === 'I') return { ...view, effect: { type: 'load-import' } };
+  if (key === 'up' || key === 'down' || key === 'left' || key === 'right') {
+    return moveCursor(view, key, columns);
+  }
+
+  const selected = commands[view.cursor] ?? null;
+  if (key === 'E') {
+    if (!selected) return view;
+    return { ...view, mode: 'form', formError: null, form: formFor(selected) };
+  }
+  if (key === 'D') {
+    if (!selected) return view;
+    return { ...view, mode: 'confirm-delete' };
+  }
+  if (key === 'enter') {
+    if (!selected) return view;
+    return { ...view, effect: { type: 'run', command: selected } };
+  }
+  // A slot key runs its command wherever it sits in the grid.
+  if (typeof key === 'string' && key.length === 1 && SLOT_KEYS.includes(key)) {
+    const index = commands.findIndex((command) => command.slot === key);
+    if (index < 0) return view;
+    return { ...view, cursor: index, effect: { type: 'run', command: commands[index] } };
+  }
+  return view;
+}
+```
+
+Update `reduceKey`'s signature and its dispatch to `reduceList`:
+
+```js
+export function reduceKey(view, key, { columns = 1 } = {}) {
+  if (!view || typeof view !== 'object') throw new TypeError('view state is required');
+  const cleared = { ...view, effect: null };
+  if (key === 'interrupt') return { ...cleared, effect: { type: 'close' } };
+  if (cleared.mode === 'error') return reduceError(cleared, key);
+  if (cleared.mode === 'confirm-delete') return reduceConfirm(cleared, key);
+  if (cleared.mode === 'form') return reduceForm(cleared, key);
+  return reduceList(cleared, key, columns);
+}
+```
+
+`emptyForm` now needs the document so it can pre-pick a free slot, and the form
+gains a `slot` field. Replace `emptyForm`, `formFor`, `FORM_FIELDS` and
+`CHOICE_FIELDS`:
+
+```js
+export const FORM_FIELDS = Object.freeze(['label', 'slot', 'type', 'command', 'cwd', 'description']);
+export const CHOICE_FIELDS = Object.freeze(new Set(['slot', 'type', 'cwd']));
+```
+
+```js
+function freeSlots(doc, keepSlot = null) {
+  const taken = new Set((doc.commands ?? []).map((command) => command.slot));
+  if (keepSlot) taken.delete(keepSlot);
+  return [...SLOT_KEYS].filter((slot) => !taken.has(slot));
+}
+
+function emptyForm(doc) {
+  const available = freeSlots(doc);
+  return {
+    commandId: null,
+    fieldIndex: 0,
+    slotChoices: available,
+    fields: {
+      label: '', slot: available[0] ?? '', type: 'shell', command: '', cwd: 'focused', description: '',
+    },
+  };
+}
+
+function formFor(command, doc) {
+  // The command keeps its own slot as a choice, plus everything still unclaimed.
+  const available = [command.slot, ...freeSlots(doc, command.slot).filter((s) => s !== command.slot)];
+  return {
+    commandId: command.id,
+    fieldIndex: 0,
+    slotChoices: available,
+    fields: {
+      label: command.label,
+      slot: command.slot,
+      type: command.type,
+      command: command.command,
+      cwd: command.cwd,
+      description: command.description,
+    },
+  };
+}
+```
+
+`formFor` now takes the doc, so update its two call sites in `reduceList` to
+`formFor(selected, view.doc)`.
+
+`cycleChoice` must consult `slotChoices` for the slot field:
+
+```js
+function cycleChoice(view, field, delta) {
+  const values = field === 'slot' ? view.form.slotChoices : CHOICE_VALUES[field];
+  if (!values || values.length === 0) return view;
+  const current = values.indexOf(view.form.fields[field]);
+  const next = values[step(current < 0 ? 0 : current, delta, values.length)];
+  return setField(view, field, next);
+}
+```
+
+`submitForm` must pass the slot through and exclude the edited command's own slot
+from the taken set:
+
+```js
+  const existingSlots = commands
+    .filter((entry) => entry.id !== form.commandId)
+    .map((entry) => entry.slot);
+```
+
+and add `slot: form.fields.slot,` to the object handed to `normalizeCommand`,
+plus `existingSlots` to its options.
+
+Finally add `'import'` to `MODES` and `importCursor: 0` to `createView`'s returned
+object. Task 22 fills the mode in; `I` only emits `load-import` here because the
+reducer does no I/O — the popup reads the herdr config and switches the mode.
+
+- [ ] **Step 4: Run the view tests**
+
+Run: `node --test test/view.test.mjs`
+Expected: PASS.
+
+- [ ] **Step 5: Write the failing render tests**
+
+Append to `test/render.test.mjs` (its `doc()` helper also needs `slot: SLOT_KEYS[index]`):
+
+```js
+test('gridColumns grows with the terminal but stays readable', () => {
+  const view = createView({ doc: doc() });
+  assert.equal(gridColumns(view, { columns: 40, rows: 24 }), 1);
+  assert.equal(gridColumns(view, { columns: 80, rows: 24 }), 2);
+  assert.ok(gridColumns(view, { columns: 200, rows: 24 }) >= 3);
+  assert.ok(gridColumns(view, { columns: 400, rows: 24 }) <= 4, 'capped so cells stay wide');
+});
+
+test('the grid shows every slot key next to its command', () => {
+  const labels = Array.from({ length: 12 }, (unused, index) => `cmd-${index}`);
+  const text = renderView(createView({ doc: doc(labels) }), { columns: 120, rows: 24 });
+  for (const slot of [...'1234567890ab']) {
+    assert.ok(text.includes(`${slot} `), `slot ${slot} is not shown`);
+  }
+  assert.ok(text.includes('cmd-11'), 'the twelfth command is reachable');
+});
+
+test('the renderer and the reducer agree on the column count', () => {
+  // If these two ever disagreed, arrow keys would move the cursor somewhere other
+  // than where the grid draws it.
+  const labels = Array.from({ length: 8 }, (unused, index) => `cmd-${index}`);
+  const view = createView({ doc: doc(labels) });
+  for (const size of [{ columns: 40, rows: 24 }, { columns: 80, rows: 24 }, { columns: 200, rows: 24 }]) {
+    const columns = gridColumns(view, size);
+    const lines = renderLines(view, size);
+    const firstRow = lines.find((line) => line.includes('cmd-0'));
+    const onFirstRow = labels.filter((label) => firstRow.includes(label)).length;
+    assert.equal(onFirstRow, Math.min(columns, labels.length), `at ${size.columns} columns`);
+  }
+});
+
+test('the grid lays commands out across columns, not down one', () => {
+  const labels = Array.from({ length: 6 }, (unused, index) => `cmd-${index}`);
+  const lines = renderLines(createView({ doc: doc(labels) }), { columns: 120, rows: 24 });
+  const row = lines.find((line) => line.includes('cmd-0'));
+  assert.ok(row.includes('cmd-1'), 'the second command shares the first row');
+});
+
+test('the list footer advertises the uppercase actions', () => {
+  const text = renderView(createView({ doc: doc() }), { columns: 120, rows: 24 });
+  for (const fragment of ['enter run', 'A add', 'E edit', 'D delete', 'O edit file', 'I import', 'esc close']) {
+    assert.ok(text.includes(fragment), `footer is missing "${fragment}"`);
+  }
+  assert.ok(!text.includes('1-9 run'), 'slots are no longer a numeric range');
+});
+
+test('the form offers the slot as a choice field', () => {
+  const text = renderView(reduceKey(createView({ doc: doc() }), 'A'), { columns: 120, rows: 24 });
+  assert.match(text, /Slot/u);
+  assert.match(text, /4\s+\(←→\)/u, 'the first free slot is pre-picked');
+});
+```
+
+- [ ] **Step 6: Run it to confirm it fails**
+
+Run: `node --test test/render.test.mjs`
+Expected: FAIL — `gridColumns` is not exported.
+
+- [ ] **Step 7: Rewrite the list body in `src/render.mjs`**
+
+Add the slot label to the form's field labels and the new footer:
+
+```js
+const LIST_FOOTER = '↑↓←→ move · enter run · slot key runs · A add · E edit · D delete · O edit file · I import · esc close';
+```
+
+```js
+const FIELD_LABELS = Object.freeze({
+  label: 'Label',
+  slot: 'Slot',
+  type: 'Type',
+  command: 'Command',
+  cwd: 'Cwd',
+  description: 'Description',
+});
+```
+
+Add the geometry helper and replace `listBody`:
+
+```js
+const MIN_CELL_WIDTH = 26;
+const MAX_GRID_COLUMNS = 4;
+
+// One definition, used by both the renderer and the popup: if the layout and the
+// reducer ever disagreed about the column count, the arrow keys would move the
+// cursor somewhere other than where the grid shows it.
+function columnsForWidth(width) {
+  return Math.max(1, Math.min(MAX_GRID_COLUMNS, Math.floor(width / MIN_CELL_WIDTH)));
+}
+
+export function gridColumns(view, size = {}) {
+  const { outerWidth } = boundedSize(size);
+  return columnsForWidth(Math.max(1, outerWidth - PADDING_X * 2));
+}
+
+function cell(view, command, index, cellWidth, color) {
+  const marker = index === view.cursor ? '›' : ' ';
+  const text = clipLine(`${marker} ${command.slot}  ${command.label}`, cellWidth);
+  const padded = text + ' '.repeat(Math.max(0, cellWidth - displayWidth(text)));
+  if (!color) return padded;
+  return index === view.cursor ? styles.bold(styles.cyan(padded)) : padded;
+}
+
+function listBody(view, width, budget, color) {
+  const commands = view.doc.commands ?? [];
+  const count = commands.length;
+  const header = clipLine(`Command Center · ${count} command${count === 1 ? '' : 's'}`, width);
+  const lines = [color ? styles.bold(header) : header, ''];
+  if (count === 0) {
+    lines.push(...wrap('Press A to add one, I to import from your herdr config, or O to open commands.toml.', width));
+    return lines;
+  }
+  const columns = columnsForWidth(width);
+  const cellWidth = Math.floor(width / columns);
+  const selected = commands[Math.max(0, Math.min(count - 1, view.cursor))];
+  const detail = [
+    clipLine(`${selected.type} · ${selected.command}`, width),
+    ...(selected.description.length > 0 ? [clipLine(selected.description, width)] : []),
+  ];
+  const rowBudget = Math.max(1, budget - lines.length - 1 - detail.length);
+  const rows = Math.ceil(count / columns);
+  const shown = Math.min(rows, rowBudget);
+  for (let row = 0; row < shown; row += 1) {
+    const parts = [];
+    for (let column = 0; column < columns; column += 1) {
+      const index = row * columns + column;
+      if (index >= count) break;
+      parts.push(cell(view, commands[index], index, cellWidth, color));
+    }
+    lines.push(parts.join('').trimEnd());
+  }
+  if (shown < rows) lines.push(clipLine(`↓ ${count - shown * columns} more`, width));
+  lines.push('');
+  lines.push(...(color ? detail.map((line) => styles.dim(line)) : detail));
+  return lines;
+}
+```
+
+- [ ] **Step 8: Run the render tests**
+
+Run: `node --test test/render.test.mjs`
+Expected: PASS.
+
+- [ ] **Step 9: Write the slot into the TOML block**
+
+In `src/toml-config.mjs`, add `slot` to the key order:
+
+```js
+const COMMAND_KEYS = Object.freeze(['id', 'slot', 'label', 'type', 'command', 'cwd', 'description']);
+```
+
+In `test/toml-config.test.mjs`, add `slot: '1'` to the `COMMAND` fixture and
+insert `'slot = "1"'` into the expected block lines, directly after the `id` line.
+
+Run: `node --test test/toml-config.test.mjs`
+Expected: PASS.
+
+- [ ] **Step 10: Give the popup room and pass the column count**
+
+In `herdr-plugin.toml`, replace the popup size — percentages were verified to work:
+
+```toml
+width = "90%"
+height = "80%"
+```
+
+In `test/manifest.test.mjs`, the size assertions must accept a percentage:
+
+```js
+  assert.match(text, /^width = "\d+%"$/mu);
+  assert.match(text, /^height = "\d+%"$/mu);
+```
+
+In `bin/popup.mjs`, import `gridColumns` alongside the others and pass it into the
+reducer so arrow keys know the grid width:
+
+```js
+import { gridColumns, renderView, textCursor } from '../src/render.mjs';
+```
+
+```js
+        view = reduceKey(view, key, { columns: gridColumns(view, screenSize(stdout, useColor)) });
+```
+
+- [ ] **Step 11: Run the whole suite**
+
+Run: `npm test`
+Expected: PASS, 0 fail.
+
+- [ ] **Step 12: Commit**
+
+```bash
+git add src/view.mjs src/render.mjs src/toml-config.mjs herdr-plugin.toml bin/popup.mjs test/view.test.mjs test/render.test.mjs test/toml-config.test.mjs test/manifest.test.mjs
+git commit -m "feat: lay the commands out as a slot grid with uppercase actions
+
+Nine positional badges in a single column wasted most of the popup and capped
+the plugin at nine one-key commands. The list is now a grid of up to four
+columns, every command shows the slot key that runs it, and all 36 slots work.
+
+Lowercase and digits run, uppercase acts. Reserving letters for actions would
+have cost seven slots and left 'deploy' unable to live on 'd'; a leader key would
+have cost a keystroke on the most common action. Two consequences: grid movement
+is arrow keys only now that j and k are slots, and Esc is the only way to close
+now that q is one.
+
+reduceKey takes the column count as a parameter rather than reading layout: the
+reducer stays free of geometry, and passing 1 reproduces the old linear
+navigation exactly, which is what the existing tests assert."
+```
+
+---
+
+## Task 20: Editor candidates instead of one hardcoded `code`
+
+**Files:**
+- Modify: `src/schema.mjs`, `src/editor.mjs`, `src/view.mjs`, `src/render.mjs`, `bin/popup.mjs`, `bin/edit-config.mjs`
+- Test: `test/editor.test.mjs`, `test/schema.test.mjs`, `test/view.test.mjs`
+
+**The semantic change:** each `editor` entry is now **one candidate command line**,
+not one argv word. `editor = ["code"]` behaves exactly as before. `editor = ["code",
+"vim"]` now offers a choice, which is what it looks like it should do. An absent or
+empty `editor` auto-detects, so the plugin no longer assumes VS Code is installed
+and that `code` is on the PATH.
+
+**Interfaces:**
+- `src/schema.mjs`: `DEFAULT_EDITOR` is removed. `normalizeEditor` now accepts `[]`.
+- `src/editor.mjs`:
+  - `COMMON_EDITORS: readonly string[]`
+  - `detectEditors(options: { env?, exists: (name: string) => boolean }): string[]`
+  - `resolveEditors(doc, options): string[]`
+  - `editorSpawn(commandLine: string, filePath: string, options?: { shell?: string }): { file, args }`
+  - `openInEditor(filePath, { editor, spawn, env?, log?, shell? })` — `editor` is now a **string**, one command line
+- `src/view.mjs`: new mode `editor-pick`, plus `beginEditorPick(view, candidates)`.
+- Effect `{ type: 'open-config' }` gains an optional `editor` once chosen.
+
+- [ ] **Step 1: Write the failing editor tests**
+
+Replace `test/editor.test.mjs` entirely:
+
+```js
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  COMMON_EDITORS,
+  detectEditors,
+  editorSpawn,
+  openInEditor,
+  resolveEditors,
+} from '../src/editor.mjs';
+
+const nothingInstalled = () => false;
+const everythingInstalled = () => true;
+
+test('editorSpawn passes the path as an argument rather than splicing it in', () => {
+  const built = editorSpawn('code', '/tmp/a b/commands.toml', { shell: '/bin/zsh' });
+  assert.equal(built.file, '/bin/zsh');
+  // "$1" keeps a path with spaces or quotes intact without any escaping of our own
+  assert.deepEqual(built.args, ['-lc', 'code "$1"', 'cc-editor', '/tmp/a b/commands.toml']);
+});
+
+test('editorSpawn keeps the flags in a candidate command line', () => {
+  const built = editorSpawn('code --new-window -g', '/tmp/commands.toml');
+  assert.equal(built.args[1], 'code --new-window -g "$1"');
+});
+
+test('editorSpawn rejects an unusable candidate', () => {
+  for (const candidate of [null, '', '   ', 42, []]) {
+    assert.throws(() => editorSpawn(candidate, '/tmp/x'), TypeError, JSON.stringify(candidate));
+  }
+});
+
+test('detectEditors prefers VISUAL, then EDITOR', () => {
+  assert.deepEqual(
+    detectEditors({ env: { VISUAL: 'nvim', EDITOR: 'vim' }, exists: nothingInstalled }),
+    ['nvim', 'vim'],
+  );
+  assert.deepEqual(detectEditors({ env: { EDITOR: 'vim' }, exists: nothingInstalled }), ['vim']);
+});
+
+test('detectEditors falls back to whatever is actually installed', () => {
+  const detected = detectEditors({ env: {}, exists: (name) => name === 'nvim' });
+  assert.deepEqual(detected, ['nvim']);
+});
+
+test('detectEditors does not offer editors that are not installed', () => {
+  assert.deepEqual(detectEditors({ env: {}, exists: nothingInstalled }), []);
+});
+
+test('detectEditors never repeats a candidate', () => {
+  const detected = detectEditors({ env: { VISUAL: 'vim', EDITOR: 'vim' }, exists: everythingInstalled });
+  assert.equal(detected.filter((name) => name === 'vim').length, 1);
+});
+
+test('COMMON_EDITORS covers the obvious choices without assuming VS Code', () => {
+  for (const name of ['code', 'nvim', 'vim', 'nano']) {
+    assert.ok(COMMON_EDITORS.includes(name), `${name} missing`);
+  }
+});
+
+test('resolveEditors uses the config when it names any candidate', () => {
+  assert.deepEqual(
+    resolveEditors({ editor: ['code', 'vim'] }, { env: {}, exists: nothingInstalled }),
+    ['code', 'vim'],
+    'a configured candidate is honoured even if we cannot see it on PATH',
+  );
+});
+
+test('resolveEditors auto-detects when the config names none', () => {
+  const options = { env: { EDITOR: 'vim' }, exists: nothingInstalled };
+  assert.deepEqual(resolveEditors({ editor: [] }, options), ['vim']);
+  assert.deepEqual(resolveEditors({}, options), ['vim']);
+});
+
+test('openInEditor spawns one candidate detached', async () => {
+  const calls = [];
+  let unrefs = 0;
+  const result = await openInEditor('/tmp/commands.toml', {
+    editor: 'code',
+    shell: '/bin/zsh',
+    env: { PATH: '/usr/bin' },
+    spawn: (file, args, options) => {
+      calls.push({ file, args, options });
+      return { unref: () => { unrefs += 1; } };
+    },
+  });
+  assert.deepEqual(result, { status: 'started' });
+  assert.equal(calls[0].file, '/bin/zsh');
+  assert.equal(calls[0].args[1], 'code "$1"');
+  assert.equal(calls[0].options.detached, true);
+  assert.equal(calls[0].options.stdio, 'ignore');
+  assert.equal(unrefs, 1);
+});
+
+test('openInEditor logs which candidate it used', async () => {
+  const events = [];
+  await openInEditor('/tmp/commands.toml', {
+    editor: 'nvim',
+    spawn: () => ({ unref: () => {} }),
+    log: async (event, detail) => { events.push([event, detail]); },
+  });
+  assert.deepEqual(events[0], ['open-config', { editor: 'nvim', path: '/tmp/commands.toml' }]);
+});
+
+test('openInEditor surfaces a spawn failure', async () => {
+  await assert.rejects(openInEditor('/tmp/commands.toml', {
+    editor: 'nope',
+    spawn: () => { throw new Error('ENOENT'); },
+  }), /ENOENT/u);
+});
+```
+
+- [ ] **Step 2: Run it to confirm it fails**
+
+Run: `node --test test/editor.test.mjs`
+Expected: FAIL — `COMMON_EDITORS` is not exported.
+
+- [ ] **Step 3: Rewrite `src/editor.mjs`**
+
+```js
+import { accessSync, constants } from 'node:fs';
+import { delimiter, join } from 'node:path';
+
+// Deliberately not just "code": the plugin cannot assume VS Code is installed or
+// that its shell integration is on the PATH. Ordered by how likely a terminal
+// user is to want each one.
+export const COMMON_EDITORS = Object.freeze([
+  'code', 'cursor', 'subl', 'nvim', 'vim', 'hx', 'nano',
+]);
+
+function onPath(name, env = process.env) {
+  const directories = String(env.PATH ?? '').split(delimiter).filter(Boolean);
+  return directories.some((directory) => {
+    try {
+      accessSync(join(directory, name), constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+// $VISUAL and $EDITOR are taken on trust: the user set them on purpose, and they
+// may name something we cannot see (a function, an alias, a wrapper).
+export function detectEditors({ env = process.env, exists = (name) => onPath(name, env) } = {}) {
+  const candidates = [];
+  const add = (value) => {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (text.length > 0 && !candidates.includes(text)) candidates.push(text);
+  };
+  add(env.VISUAL);
+  add(env.EDITOR);
+  for (const name of COMMON_EDITORS) {
+    if (exists(name)) add(name);
+  }
+  return candidates;
+}
+
+export function resolveEditors(doc, options = {}) {
+  const configured = Array.isArray(doc?.editor)
+    ? doc.editor.filter((entry) => typeof entry === 'string' && entry.trim().length > 0)
+    : [];
+  return configured.length > 0 ? configured : detectEditors(options);
+}
+
+export function editorSpawn(commandLine, filePath, { shell } = {}) {
+  if (typeof commandLine !== 'string' || commandLine.trim().length === 0) {
+    throw new TypeError('an editor candidate must be a non-empty command line');
+  }
+  // The path goes in as "$1" rather than being pasted into the command line, so a
+  // path containing a space or a quote needs no escaping from us at all.
+  return {
+    file: shell || '/bin/sh',
+    args: ['-lc', `${commandLine.trim()} "$1"`, 'cc-editor', filePath],
+  };
+}
+
+export async function openInEditor(filePath, { editor, spawn, env = process.env, log, shell } = {}) {
+  const { file, args } = editorSpawn(editor, filePath, { shell });
+  const child = spawn(file, args, { detached: true, stdio: 'ignore', shell: false, env });
+  child?.unref?.();
+  if (typeof log === 'function') await log('open-config', { editor, path: filePath });
+  return { status: 'started' };
+}
+```
+
+- [ ] **Step 4: Loosen `normalizeEditor` in `src/schema.mjs`**
+
+Delete the `DEFAULT_EDITOR` export and replace `normalizeEditor`:
+
+```js
+function normalizeEditor(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > MAX_EDITOR_ARGS) {
+    throw new ConfigError(`editor must be an array of at most ${MAX_EDITOR_ARGS} command lines`);
+  }
+  // Each entry is one candidate command line. An empty list means "auto-detect",
+  // which is why it is allowed here.
+  return value.map((entry, index) => requireText(entry, `editor[${index}]`, 512));
+}
+```
+
+`defaultConfig()` now seeds `editor: []`. In `test/schema.test.mjs`, replace the
+`DEFAULT_EDITOR` assertions: drop it from the import and from the vocabularies
+test, change `normalizeConfig fills missing …` to expect `editor: []`, and change
+the `editor: []` rejection case to assert it is now **accepted**:
+
+```js
+test('an empty editor list means auto-detect rather than an error', () => {
+  assert.deepEqual(normalizeConfig({ editor: [] }).editor, []);
+  assert.deepEqual(normalizeConfig({}).editor, []);
+});
+```
+
+Every other `DEFAULT_EDITOR` reference across the repo must go: `bin/popup.mjs`
+(the broken-config fallback doc becomes `editor: []`), `bin/edit-config.mjs` (its
+fallback becomes `[]` and it resolves candidates through `resolveEditors`), and
+`test/store.test.mjs` / `test/toml-config.test.mjs` expectations that assumed
+`['code']`. Find them with:
+
+```bash
+grep -rn "DEFAULT_EDITOR\|\['code'\]\|\[\"code\"\]" src bin test
+```
+
+- [ ] **Step 5: Add the picker mode to `src/view.mjs`**
+
+Add `'editor-pick'` to `MODES`, and:
+
+```js
+// The reducer does no I/O, so the popup resolves the candidate list and hands it
+// in. One candidate never reaches this mode: the popup just opens it.
+export function beginEditorPick(view, candidates) {
+  return {
+    ...view,
+    mode: 'editor-pick',
+    editorChoices: [...candidates],
+    editorCursor: 0,
+    effect: null,
+  };
+}
+
+function reduceEditorPick(view, key) {
+  const choices = view.editorChoices ?? [];
+  if (key === 'escape') return { ...view, mode: 'list', editorChoices: [], editorCursor: 0 };
+  if (key === 'up') return { ...view, editorCursor: step(view.editorCursor, -1, choices.length) };
+  if (key === 'down') return { ...view, editorCursor: step(view.editorCursor, 1, choices.length) };
+  const chosen = (index) => {
+    const editor = choices[index];
+    if (!editor) return view;
+    return { ...view, mode: 'list', effect: { type: 'open-config', editor } };
+  };
+  if (key === 'enter') return chosen(view.editorCursor);
+  if (/^[1-9]$/u.test(key)) return chosen(Number(key) - 1);
+  return view;
+}
+```
+
+Wire it into `reduceKey` before the form branch, and add `editorChoices: []` /
+`editorCursor: 0` to `createView`'s returned object.
+
+- [ ] **Step 6: Render the picker in `src/render.mjs`**
+
+```js
+const EDITOR_FOOTER = '↑↓ move · enter open · 1-9 open · esc cancel';
+```
+
+```js
+function editorPickBody(view, width, budget, color) {
+  const title = clipLine('Command Center · Open commands.toml with', width);
+  const lines = [color ? styles.bold(title) : title, ''];
+  (view.editorChoices ?? []).forEach((editor, index) => {
+    const marker = index === view.editorCursor ? '›' : ' ';
+    const line = clipLine(`${marker} ${index + 1}. ${editor}`, width);
+    lines.push(color && index === view.editorCursor ? styles.bold(styles.cyan(line)) : line);
+  });
+  return lines.slice(0, Math.max(1, budget));
+}
+```
+
+Register it in both `BODIES` and `FOOTERS` under `'editor-pick'`.
+
+- [ ] **Step 7: Resolve candidates in `bin/popup.mjs`**
+
+Import `resolveEditors` from `../src/editor.mjs` and `beginEditorPick` from
+`../src/view.mjs`. Replace the `open-config` branch of the effect switch:
+
+```js
+        if (effect.type === 'open-config') {
+          const editor = effect.editor
+            ?? (() => {
+              const candidates = resolveEditors(view.doc, { env });
+              return candidates.length === 1 ? candidates[0] : null;
+            })();
+          if (editor) {
+            spawnRunner({ kind: 'open-config', editor });
+            return 0;
+          }
+          const candidates = resolveEditors(view.doc, { env });
+          if (candidates.length === 0) {
+            view = createView({
+              doc: view.doc,
+              error: 'no editor found; set editor = ["your-editor"] in commands.toml, or $EDITOR',
+            });
+            draw();
+            continue;
+          }
+          view = beginEditorPick(view, candidates);
+          draw();
+          continue;
+        }
+```
+
+`spawnRunner` must now put a single string in the task's `editor` field rather
+than the doc's array:
+
+```js
+        COMMAND_CENTER_TASK_JSON: JSON.stringify({
+          ...task,
+          context,
+          commandsPath: commandsFile,
+          logPath: logFile,
+        }),
+```
+
+with `editor` supplied by each caller — `{ kind: 'run', command }` needs none, and
+`{ kind: 'open-config', editor }` carries it. `bin/run.mjs`'s `parseTask` changes
+its editor validation accordingly:
+
+```js
+  if (value.kind === 'open-config') {
+    if (typeof value.editor !== 'string' || value.editor.trim().length === 0) return null;
+    return { ...value, context, command: null };
+  }
+```
+
+and its `openInEditor` call passes `editor: task.editor, shell: env.SHELL`.
+
+Update `test/run.test.mjs`'s task fixture from `editor: ['code']` to
+`editor: 'code'`, its open-config assertions to expect the shell invocation
+(`spawns[0].args[1] === 'code "$1"'`), and the `{ editor: [] }` / `{ editor: 'code' }`
+malformed-task cases to `{ editor: '' }` and `{ editor: ['code'] }`.
+
+- [ ] **Step 8: Run the whole suite**
+
+Run: `npm test`
+Expected: PASS, 0 fail.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/schema.mjs src/editor.mjs src/view.mjs src/render.mjs bin/popup.mjs bin/edit-config.mjs bin/run.mjs test/editor.test.mjs test/schema.test.mjs test/view.test.mjs test/store.test.mjs test/toml-config.test.mjs test/run.test.mjs
+git commit -m "feat: choose an editor instead of assuming code is installed
+
+Defaulting to 'code' assumed VS Code and its shell integration; the plugin now
+auto-detects from \$VISUAL, then \$EDITOR, then whatever is actually on the PATH,
+so an empty editor list is the sensible default rather than a guess.
+
+The editor key keeps its name but changes meaning: each array entry is one
+candidate command line, not one argv word. editor = [\"code\"] behaves exactly as
+before, and editor = [\"code\", \"vim\"] now offers a choice — which is what it
+looks like it should do, and what it was reported as doing wrong. Flags go inside
+one entry: [\"code --new-window\"].
+
+The path is handed to the shell as \"\$1\" instead of being pasted into the command
+line, so a config directory containing a space needs no escaping from us."
+```
+
+---
+
+## Task 21: A command type whose output lands in the pane you are looking at
+
+**Files:**
+- Modify: `src/schema.mjs`, `src/context.mjs`, `src/executor.mjs`, `bin/open.mjs`
+- Test: `test/schema.test.mjs`, `test/context.test.mjs`, `test/executor.test.mjs`, `test/actions.test.mjs`
+
+**Why this is not just another shell type:** `herdr pane run <pane> '<line>'` maps
+to `pane.send_input` — it types the line into that pane and presses Enter. That is
+exactly what "show me the output where I am looking" needs, and it is also
+dangerous: if the focused pane is running an agent, the line is submitted to the
+**agent** as a prompt. Most panes on the author's machine run `claude`. So the
+executor refuses when `focusedPaneAgent` is set, and says why.
+
+**Interfaces:**
+- `COMMAND_TYPES` becomes `['shell', 'pane', 'plugin_action']`.
+- `readContext` also returns `focusedPaneId: string | null` and `focusedPaneAgent: string | null`; `serializeContext` carries them.
+- `executeCommand` handles `pane`, and takes an optional `notify` function.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `test/schema.test.mjs`, update the vocabularies test to expect the new
+`COMMAND_TYPES` and add:
+
+```js
+test('a pane command is validated like a shell command', () => {
+  const command = normalizeCommand({ label: 'Echo', type: 'pane', command: 'echo hello' });
+  assert.equal(command.type, 'pane');
+  assert.equal(command.command, 'echo hello');
+});
+```
+
+In `test/context.test.mjs`:
+
+```js
+test('readContext carries the focused pane and whichever agent owns it', () => {
+  const context = readContext({
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+      focused_pane_id: 'wE:p3',
+      focused_pane_agent: 'claude',
+      focused_pane_cwd: '/Users/cdragon/repo',
+    }),
+  });
+  assert.equal(context.focusedPaneId, 'wE:p3');
+  assert.equal(context.focusedPaneAgent, 'claude');
+});
+
+test('readContext reports no agent as null rather than a string', () => {
+  const context = readContext({
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'wC:p7', focused_pane_agent: null }),
+  });
+  assert.equal(context.focusedPaneId, 'wC:p7');
+  assert.equal(context.focusedPaneAgent, null);
+});
+
+test('serializeContext round-trips the pane fields', () => {
+  const context = {
+    focusedPaneCwd: '/a', workspaceCwd: '/b', focusedPaneId: 'wE:p3', focusedPaneAgent: 'claude',
+  };
+  assert.deepEqual(readContext({ COMMAND_CENTER_CONTEXT_JSON: serializeContext(context) }), context);
+});
+```
+
+In `test/executor.test.mjs`:
+
+```js
+function paneCommand(overrides = {}) {
+  return {
+    id: 'echo', slot: '1', label: 'Echo', type: 'pane',
+    command: 'echo hello', cwd: 'focused', description: '', ...overrides,
+  };
+}
+
+test('a pane command is typed into the focused pane so its output shows there', async () => {
+  const calls = [];
+  const result = await executeCommand(paneCommand(), {
+    context: { focusedPaneId: 'wC:p7', focusedPaneAgent: null },
+    herdrBin: '/opt/homebrew/bin/herdr',
+    spawn: () => { throw new Error('a pane command must not spawn'); },
+    execFile: async (bin, args) => { calls.push({ bin, args }); return { stdout: '{}', stderr: '' }; },
+    sleep: noSleep,
+  });
+  assert.deepEqual(result, { status: 'sent' });
+  assert.deepEqual(calls, [{
+    bin: '/opt/homebrew/bin/herdr',
+    args: ['pane', 'run', 'wC:p7', 'echo hello'],
+  }]);
+});
+
+test('a pane command keeps shell metacharacters in one argument', async () => {
+  let args = null;
+  await executeCommand(paneCommand({ command: 'printf "a\\nb\\n" | wc -l' }), {
+    context: { focusedPaneId: 'wC:p7', focusedPaneAgent: null },
+    spawn: () => {},
+    execFile: async (bin, callArgs) => { args = callArgs; return { stdout: '{}' }; },
+    sleep: noSleep,
+  });
+  assert.equal(args.at(-1), 'printf "a\\nb\\n" | wc -l');
+  assert.equal(args.length, 4, 'the line is one argument, not split on spaces');
+});
+
+test('a pane command refuses to type into a pane an agent owns', async () => {
+  const notes = [];
+  await assert.rejects(executeCommand(paneCommand(), {
+    context: { focusedPaneId: 'wE:p3', focusedPaneAgent: 'claude' },
+    spawn: () => {},
+    execFile: async () => { throw new Error('must not be called'); },
+    notify: async (title, body) => { notes.push([title, body]); },
+    sleep: noSleep,
+  }), (error) => {
+    assert.ok(error instanceof ExecutionError);
+    assert.match(error.message, /claude/u);
+    return true;
+  });
+  assert.equal(notes.length, 1, 'the user is told why nothing happened');
+  assert.match(notes[0][1], /claude/u);
+});
+
+test('a pane command refuses when there is no pane to type into', async () => {
+  await assert.rejects(executeCommand(paneCommand(), {
+    context: { focusedPaneId: null, focusedPaneAgent: null },
+    spawn: () => {},
+    execFile: async () => { throw new Error('must not be called'); },
+    sleep: noSleep,
+  }), ExecutionError);
+});
+```
+
+- [ ] **Step 2: Run them to confirm they fail**
+
+Run: `node --test test/executor.test.mjs test/context.test.mjs test/schema.test.mjs`
+Expected: FAIL — `pane` is not an accepted type.
+
+- [ ] **Step 3: Add `pane` to `src/schema.mjs`**
+
+```js
+export const COMMAND_TYPES = Object.freeze(['shell', 'pane', 'plugin_action']);
+```
+
+No other schema change: a `pane` command validates exactly like a `shell` one.
+
+- [ ] **Step 4: Carry the pane fields in `src/context.mjs`**
+
+Add a passthrough for non-path values and extend both functions:
+
+```js
+function usableId(value) {
+  return typeof value === 'string' && value.length > 0 && !value.includes('\u0000') ? value : null;
+}
+```
+
+```js
+export function readContext(env = process.env) {
+  const forwarded = parseContextJson(env.COMMAND_CENTER_CONTEXT_JSON);
+  const injected = parseContextJson(env.HERDR_PLUGIN_CONTEXT_JSON);
+  const source = forwarded ?? injected ?? {};
+  return {
+    focusedPaneCwd: usableDir(source.focusedPaneCwd)
+      ?? usableDir(source.focused_pane_cwd)
+      ?? usableDir(env.HERDR_ACTIVE_PANE_CWD),
+    workspaceCwd: usableDir(source.workspaceCwd) ?? usableDir(source.workspace_cwd),
+    // Carried for `pane` commands: which pane to type into, and whether an agent
+    // owns it. HERDR_PANE_ID is deliberately not a fallback — inside the popup
+    // that is the popup's own pane.
+    focusedPaneId: usableId(source.focusedPaneId)
+      ?? usableId(source.focused_pane_id)
+      ?? usableId(env.HERDR_ACTIVE_PANE_ID),
+    focusedPaneAgent: usableId(source.focusedPaneAgent) ?? usableId(source.focused_pane_agent),
+  };
+}
+
+export function serializeContext(context) {
+  return JSON.stringify({
+    focusedPaneCwd: usableDir(context?.focusedPaneCwd),
+    workspaceCwd: usableDir(context?.workspaceCwd),
+    focusedPaneId: usableId(context?.focusedPaneId),
+    focusedPaneAgent: usableId(context?.focusedPaneAgent),
+  });
+}
+```
+
+- [ ] **Step 5: Execute it in `src/executor.mjs`**
+
+```js
+async function runInPane(command, { context, herdrBin, env, execFile, log, notify }) {
+  const paneId = context?.focusedPaneId;
+  const agent = context?.focusedPaneAgent;
+  if (!paneId) {
+    if (typeof log === 'function') await log('pane_no_target', { id: command.id });
+    throw new ExecutionError('there is no focused pane to run this in');
+  }
+  // `herdr pane run` types the line into the pane and presses Enter. When an agent
+  // owns that pane, the line would be submitted to the agent as a prompt instead
+  // of to a shell, so refuse and say so rather than prompt someone's Claude.
+  if (agent) {
+    if (typeof log === 'function') await log('pane_busy_with_agent', { id: command.id, agent });
+    if (typeof notify === 'function') {
+      await notify(
+        'Command Center',
+        `"${command.label}" was not run: the focused pane is running ${agent}, and typing into it would prompt the agent. Focus a shell pane and try again.`,
+      );
+    }
+    throw new ExecutionError(`the focused pane is running ${agent}, not a shell`);
+  }
+  await execFile(herdrBin, ['pane', 'run', paneId, command.command], {
+    env,
+    encoding: 'utf8',
+    timeout: CLI_TIMEOUT_MS,
+    maxBuffer: MAX_BUFFER_BYTES,
+    shell: false,
+  });
+  if (typeof log === 'function') await log('pane', { id: command.id, paneId });
+  return { status: 'sent' };
+}
+```
+
+Add `notify` to `executeCommand`'s options and dispatch the new type:
+
+```js
+  if (command?.type === 'pane') {
+    return runInPane(command, { context, herdrBin, env, execFile, log, notify });
+  }
+```
+
+- [ ] **Step 6: Give the runner a notifier**
+
+In `bin/run.mjs`, add a default `notify` that shells out to herdr, and pass it to
+`executeCommand`:
+
+```js
+const herdrNotify = (bin, env, execFile) => async (title, body) => {
+  try {
+    await execFile(bin, ['notification', 'show', title, '--body', body], {
+      env, encoding: 'utf8', timeout: 5_000, maxBuffer: 1_048_576, shell: false,
+    });
+  } catch {
+    // A failed notification must not mask the execution error it describes.
+  }
+};
+```
+
+```js
+    const herdrBin = env.HERDR_BIN_PATH || 'herdr';
+    await executeCommand(task.command, {
+      context: task.context,
+      herdrBin,
+      shell: env.SHELL,
+      env,
+      spawn,
+      execFile,
+      log: logger.write,
+      sleep,
+      notify: herdrNotify(herdrBin, env, execFile),
+    });
+```
+
+- [ ] **Step 7: Verify `bin/open.mjs` forwards the new fields**
+
+It already calls `serializeContext(readContext(env))`, so no code change is
+needed. Add an assertion to `test/actions.test.mjs`'s context-forwarding test:
+
+```js
+  assert.deepEqual(JSON.parse(envArg.slice('COMMAND_CENTER_CONTEXT_JSON='.length)), {
+    focusedPaneCwd: '/Users/cdragon/repo',
+    workspaceCwd: '/Users/cdragon',
+    focusedPaneId: 'wE:p3',
+    focusedPaneAgent: null,
+  });
+```
+
+- [ ] **Step 8: Run the whole suite**
+
+Run: `npm test`
+Expected: PASS, 0 fail.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/schema.mjs src/context.mjs src/executor.mjs bin/run.mjs test/schema.test.mjs test/context.test.mjs test/executor.test.mjs test/actions.test.mjs
+git commit -m "feat: add a pane command type that runs where you are looking
+
+A shell command runs detached, so 'echo hello' produced no visible output — the
+reported surprise. A pane command instead goes through 'herdr pane run', which
+types the line into the focused pane and presses Enter, so the output appears in
+the pane the user was already reading. Shell metacharacters survive because the
+whole line is one argument.
+
+The same mechanism is why it needs a guard: that pane may be running an agent, and
+then the line is submitted to the agent as a prompt rather than to a shell. Most
+panes on the author's machine run claude. So the executor refuses when the
+invocation context reports an agent, logs it, and raises a herdr notification
+naming the agent and what to do instead — silence would look like a broken
+keybinding, and running anyway would prompt somebody's Claude with 'echo hello'.
+
+Pane id and agent are now carried in the forwarded context. HERDR_PANE_ID is
+still not a fallback: inside the popup that is the popup's own pane."
+```
+
+---
+
+## Task 22: Import commands from the herdr config
+
+**Files:**
+- Create: `src/herdr-config.mjs`
+- Modify: `src/view.mjs`, `src/render.mjs`, `bin/popup.mjs`
+- Test: `test/herdr-config.test.mjs`, `test/view.test.mjs`, `test/popup.test.mjs`
+
+**Why:** a fresh install starts with three seeded commands and everything else has
+to be typed in by hand, while the user's `~/.config/herdr/config.toml` already
+lists the prefix keybindings this plugin exists to replace. Importing turns
+setup into "press `I`, pick one, pick a slot".
+
+**Interfaces:**
+- `src/herdr-config.mjs`:
+  - `herdrConfigPath(env?): string`
+  - `importableCommands(text: string): ImportEntry[]`
+  - `readImportable(path, { readFile }): Promise<ImportEntry[]>`
+- `ImportEntry` is `{ key: string, label: string, type: string | null, command: string, description: string, reason: string | null }`. `type` is `null` and `reason` explains why when the entry cannot be imported.
+- `src/view.mjs`: `beginImport(view, entries)`, mode `import`.
+
+herdr's `[[keys.command]]` types map as: `shell` → `shell`, `pane` → `pane`,
+`popup` → `pane` (both put output in a pane), `plugin_action` → `plugin_action`.
+Anything else is listed with a reason rather than hidden, so the user can see that
+it was considered.
+
+- [ ] **Step 1: Write the failing test `test/herdr-config.test.mjs`**
+
+```js
+import assert from 'node:assert/strict';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import { herdrConfigPath, importableCommands, readImportable } from '../src/herdr-config.mjs';
+
+const CONFIG = `
+prefix = "ctrl+a"
+
+[[keys.command]]
+key = "prefix+shift+o"
+type = "shell"
+command = "code ."
+
+[[keys.command]]              # split pane으로 열기
+key = "prefix+y"
+type = "plugin_action"
+command = "ray.file-explorer.open"
+description = "open file explorer"
+
+[[keys.command]]
+key = "prefix+alt+g"
+type = "popup"
+command = "lazygit"
+width = "80%"
+
+[[keys.command]]
+key = "prefix+t"
+type = "pane"
+command = "htop"
+
+[[keys.command]]
+key = "prefix+b"
+type = "nonsense"
+command = "whatever"
+`;
+
+test('herdrConfigPath honours HERDR_CONFIG_PATH and otherwise uses the default', () => {
+  assert.equal(herdrConfigPath({ HERDR_CONFIG_PATH: '/tmp/c.toml' }), '/tmp/c.toml');
+  assert.equal(
+    herdrConfigPath({ HOME: '/Users/x' }),
+    join('/Users/x', '.config', 'herdr', 'config.toml'),
+  );
+});
+
+test('importableCommands finds every keys.command entry', () => {
+  const entries = importableCommands(CONFIG);
+  assert.equal(entries.length, 5);
+  assert.deepEqual(entries.map((entry) => entry.key), [
+    'prefix+shift+o', 'prefix+y', 'prefix+alt+g', 'prefix+t', 'prefix+b',
+  ]);
+});
+
+test('importableCommands maps herdr types onto this plugin types', () => {
+  const byKey = Object.fromEntries(importableCommands(CONFIG).map((e) => [e.key, e]));
+  assert.equal(byKey['prefix+shift+o'].type, 'shell');
+  assert.equal(byKey['prefix+y'].type, 'plugin_action');
+  assert.equal(byKey['prefix+t'].type, 'pane');
+  // a herdr popup command also puts its output in a pane
+  assert.equal(byKey['prefix+alt+g'].type, 'pane');
+});
+
+test('importableCommands explains an entry it cannot map rather than hiding it', () => {
+  const entry = importableCommands(CONFIG).find((e) => e.key === 'prefix+b');
+  assert.equal(entry.type, null);
+  assert.match(entry.reason, /nonsense/u);
+});
+
+test('importableCommands prefers the description as the label', () => {
+  const byKey = Object.fromEntries(importableCommands(CONFIG).map((e) => [e.key, e]));
+  assert.equal(byKey['prefix+y'].label, 'open file explorer');
+  // with no description, the command itself is the most useful label
+  assert.equal(byKey['prefix+shift+o'].label, 'code .');
+});
+
+test('importableCommands skips the binding that opens this very popup', () => {
+  const entries = importableCommands([
+    '[[keys.command]]',
+    'key = "prefix+m"',
+    'type = "plugin_action"',
+    'command = "cdragon.command-center.open"',
+    '',
+    '[[keys.command]]',
+    'key = "prefix+y"',
+    'type = "plugin_action"',
+    'command = "ray.file-explorer.open"',
+    '',
+  ].join('\n'));
+  assert.deepEqual(entries.map((entry) => entry.command), ['ray.file-explorer.open']);
+});
+
+test('importableCommands tolerates a config with no command keybindings', () => {
+  assert.deepEqual(importableCommands('prefix = "ctrl+b"\n'), []);
+  assert.deepEqual(importableCommands(''), []);
+});
+
+test('importableCommands returns nothing for a config it cannot parse', () => {
+  assert.deepEqual(importableCommands('[[keys.command]]\nkey = '), []);
+});
+
+test('importableCommands skips an entry with no command to run', () => {
+  const entries = importableCommands('[[keys.command]]\nkey = "prefix+x"\ntype = "shell"\n');
+  assert.deepEqual(entries, []);
+});
+
+test('readImportable returns nothing when the config is missing', async () => {
+  const entries = await readImportable('/nope/config.toml', {
+    readFile: async () => {
+      const error = new Error('missing');
+      error.code = 'ENOENT';
+      throw error;
+    },
+  });
+  assert.deepEqual(entries, []);
+});
+
+test('readImportable reads and parses a real file', async () => {
+  const entries = await readImportable('/tmp/config.toml', { readFile: async () => CONFIG });
+  assert.equal(entries.length, 5);
+});
+```
+
+- [ ] **Step 2: Run it to confirm it fails**
+
+Run: `node --test test/herdr-config.test.mjs`
+Expected: FAIL — `Cannot find module '.../src/herdr-config.mjs'`.
+
+- [ ] **Step 3: Write `src/herdr-config.mjs`**
+
+```js
+import { readFile as readFileAsync } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
+
+import { PLUGIN_ID } from './plugin.mjs';
+import { parseConfigToml } from './toml-config.mjs';
+
+const MAX_LABEL_LENGTH = 80;
+// herdr's own keybinding types, mapped onto this plugin's. A herdr `popup`
+// command runs something in a popup pane, so a pane command is the closest thing
+// this plugin can offer.
+const TYPE_MAP = Object.freeze({
+  shell: 'shell',
+  pane: 'pane',
+  popup: 'pane',
+  plugin_action: 'plugin_action',
+});
+
+export function herdrConfigPath(env = process.env) {
+  const configured = env.HERDR_CONFIG_PATH;
+  if (typeof configured === 'string' && configured.length > 0 && isAbsolute(configured)) {
+    return configured;
+  }
+  return join(env.HOME || homedir(), '.config', 'herdr', 'config.toml');
+}
+
+function label(entry) {
+  const described = typeof entry.description === 'string' ? entry.description.trim() : '';
+  const source = described.length > 0 ? described : String(entry.command ?? '').trim();
+  return source.slice(0, MAX_LABEL_LENGTH);
+}
+
+export function importableCommands(text) {
+  let parsed;
+  try {
+    parsed = parseConfigToml(text, 'config.toml');
+  } catch {
+    // Someone else's config failing to parse is not this plugin's problem to
+    // report; there is simply nothing to offer.
+    return [];
+  }
+  const raw = parsed?.keys?.command;
+  if (!Array.isArray(raw)) return [];
+  const entries = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const command = typeof entry.command === 'string' ? entry.command.trim() : '';
+    if (command.length === 0) continue;
+    const herdrType = typeof entry.type === 'string' ? entry.type : '';
+    const mapped = TYPE_MAP[herdrType] ?? null;
+    // The binding that opens this popup is in there too. Importing it would add a
+    // command whose only effect is to reopen the popup you are standing in.
+    if (mapped === 'plugin_action' && command.startsWith(`${PLUGIN_ID}.`)) continue;
+    entries.push({
+      key: typeof entry.key === 'string' ? entry.key : '',
+      label: label(entry),
+      type: mapped,
+      command,
+      description: typeof entry.description === 'string' ? entry.description.trim() : '',
+      reason: mapped ? null : `herdr type "${herdrType}" has no equivalent here`,
+    });
+  }
+  return entries;
+}
+
+export async function readImportable(path, { readFile = readFileAsync } = {}) {
+  let text;
+  try {
+    text = await readFile(path, 'utf8');
+  } catch {
+    return [];
+  }
+  return importableCommands(text);
+}
+```
+
+- [ ] **Step 4: Run the parser tests**
+
+Run: `node --test test/herdr-config.test.mjs`
+Expected: PASS — 11 tests.
+
+- [ ] **Step 5: Add the import mode to `src/view.mjs`**
+
+```js
+// The reducer does no I/O, so the popup reads the herdr config and hands the
+// entries in. `already` marks what this plugin has registered, so the user is not
+// offered a duplicate without knowing it.
+export function beginImport(view, entries) {
+  const registered = new Set((view.doc.commands ?? []).map((command) => `${command.type} ${command.command}`));
+  return {
+    ...view,
+    mode: 'import',
+    importEntries: entries.map((entry) => ({
+      ...entry,
+      already: registered.has(`${entry.type} ${entry.command}`),
+    })),
+    importCursor: 0,
+    effect: null,
+  };
+}
+
+function reduceImport(view, key) {
+  const entries = view.importEntries ?? [];
+  if (key === 'escape') return { ...view, mode: 'list', importEntries: [], importCursor: 0 };
+  if (key === 'up') return { ...view, importCursor: step(view.importCursor, -1, entries.length) };
+  if (key === 'down') return { ...view, importCursor: step(view.importCursor, 1, entries.length) };
+  if (key !== 'enter') return view;
+  const entry = entries[view.importCursor];
+  if (!entry || !entry.type) return view;
+  // Hand it to the ordinary add form, prefilled: the user still picks the slot and
+  // can fix the label before anything is written.
+  const available = freeSlots(view.doc);
+  return {
+    ...view,
+    mode: 'form',
+    importEntries: [],
+    importCursor: 0,
+    formError: null,
+    form: {
+      commandId: null,
+      fieldIndex: 0,
+      slotChoices: available,
+      fields: {
+        label: entry.label,
+        slot: available[0] ?? '',
+        type: entry.type,
+        command: entry.command,
+        cwd: 'focused',
+        description: entry.description,
+      },
+    },
+  };
+}
+```
+
+Wire `reduceImport` into `reduceKey`, and add `importEntries: []` to `createView`.
+
+Add to `test/view.test.mjs`:
+
+```js
+test('beginImport marks what is already registered', () => {
+  const view = createView({ doc: doc(['One']) });
+  const imported = beginImport(view, [
+    { key: 'prefix+x', label: 'One', type: 'shell', command: 'run-0', description: '', reason: null },
+    { key: 'prefix+y', label: 'New', type: 'shell', command: 'brand-new', description: '', reason: null },
+  ]);
+  assert.equal(imported.mode, 'import');
+  assert.deepEqual(imported.importEntries.map((entry) => entry.already), [true, false]);
+});
+
+test('choosing an import entry opens a prefilled add form', () => {
+  const view = beginImport(createView({ doc: doc() }), [
+    { key: 'prefix+g', label: 'Lazygit', type: 'pane', command: 'lazygit', description: 'git TUI', reason: null },
+  ]);
+  const form = reduceKey(view, 'enter');
+  assert.equal(form.mode, 'form');
+  assert.equal(form.form.commandId, null, 'it is an add, not an edit');
+  assert.equal(form.form.fields.label, 'Lazygit');
+  assert.equal(form.form.fields.type, 'pane');
+  assert.equal(form.form.fields.command, 'lazygit');
+  assert.equal(form.form.fields.description, 'git TUI');
+  assert.equal(form.form.fields.slot, '4', 'the first free slot');
+  assert.equal(form.effect, null, 'nothing is written until the form is saved');
+});
+
+test('an unmappable import entry cannot be chosen', () => {
+  const view = beginImport(createView({ doc: doc() }), [
+    { key: 'prefix+b', label: 'x', type: null, command: 'whatever', description: '', reason: 'no equivalent' },
+  ]);
+  assert.equal(reduceKey(view, 'enter').mode, 'import');
+});
+
+test('escape leaves the import list without changing anything', () => {
+  const view = beginImport(createView({ doc: doc() }), []);
+  const back = reduceKey(view, 'escape');
+  assert.equal(back.mode, 'list');
+  assert.equal(back.effect, null);
+});
+```
+
+Import `beginImport` in that test file.
+
+- [ ] **Step 6: Render the import list in `src/render.mjs`**
+
+```js
+const IMPORT_FOOTER = '↑↓ move · enter set up · esc cancel';
+```
+
+```js
+function importBody(view, width, budget, color) {
+  const entries = view.importEntries ?? [];
+  const title = clipLine(`Command Center · import from herdr config · ${entries.length} found`, width);
+  const lines = [color ? styles.bold(title) : title, ''];
+  if (entries.length === 0) {
+    lines.push(...wrap('No [[keys.command]] entries found in your herdr config.toml.', width));
+    return lines.slice(0, Math.max(1, budget));
+  }
+  const rowBudget = Math.max(1, budget - lines.length - 2);
+  entries.slice(0, rowBudget).forEach((entry, index) => {
+    const marker = index === view.importCursor ? '›' : ' ';
+    const note = entry.reason ? '  (unsupported)' : (entry.already ? '  (already added)' : '');
+    const line = clipLine(`${marker} ${entry.key}  ${entry.label}${note}`, width);
+    const styled = color && index === view.importCursor
+      ? styles.bold(styles.cyan(line))
+      : (color && (entry.reason || entry.already) ? styles.dim(line) : line);
+    lines.push(styled);
+  });
+  const chosen = entries[Math.max(0, Math.min(entries.length - 1, view.importCursor))];
+  lines.push('');
+  const detail = clipLine(`${chosen.type ?? '—'} · ${chosen.command}`, width);
+  lines.push(color ? styles.dim(detail) : detail);
+  return lines;
+}
+```
+
+Register `'import'` in both `BODIES` and `FOOTERS`.
+
+- [ ] **Step 7: Load the entries in `bin/popup.mjs`**
+
+Import `beginImport` from `../src/view.mjs`, and `herdrConfigPath` / `readImportable`
+from `../src/herdr-config.mjs`. Add the effect branch:
+
+```js
+        if (effect.type === 'load-import') {
+          view = beginImport(view, await readImportable(herdrConfigPath(env)));
+          draw();
+          continue;
+        }
+```
+
+Add to `test/popup.test.mjs`:
+
+```js
+test('I lists the commands in the herdr config and adds the chosen one', async () => {
+  const { dir, file } = await scratch();
+  const herdrConfig = join(dir, 'herdr-config.toml');
+  await writeFile(herdrConfig, [
+    '[[keys.command]]',
+    'key = "prefix+g"',
+    'type = "shell"',
+    'command = "lazygit"',
+    'description = "git TUI"',
+    '',
+  ].join('\n'), 'utf8');
+
+  const { code, stdout } = await harness(
+    ['I', '\r', '\r', '\u001b'],
+    { dir, extraEnv: { HERDR_CONFIG_PATH: herdrConfig } },
+  );
+  assert.equal(code, 0);
+  assert.ok(stdout.frames.some((frame) => frame.includes('import from herdr config')));
+  assert.ok(stdout.frames.some((frame) => frame.includes('prefix+g')));
+  const written = await readFile(file, 'utf8');
+  assert.ok(written.includes('command = "lazygit"'), written);
+  assert.ok(written.includes('label = "git TUI"'), written);
+});
+```
+
+(`join` is already imported there; add `readFile` to the `node:fs/promises` import
+if it is not already present.)
+
+- [ ] **Step 8: Run the whole suite**
+
+Run: `npm test`
+Expected: PASS, 0 fail.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/herdr-config.mjs src/view.mjs src/render.mjs bin/popup.mjs test/herdr-config.test.mjs test/view.test.mjs test/popup.test.mjs
+git commit -m "feat: import commands from the herdr config
+
+A fresh install has three seeded commands and everything else has to be typed in,
+while ~/.config/herdr/config.toml already lists the prefix keybindings this plugin
+exists to replace. Pressing I lists them, and choosing one opens the ordinary add
+form prefilled, so the slot and the label are still the user's call and nothing is
+written until they save.
+
+Entries that cannot be mapped are listed with the reason rather than hidden — a
+silently shorter list looks like a parsing bug. Entries this plugin already has
+are marked, so the same command is not added twice by accident.
+
+Reading the config is the popup's job, not the reducer's: beginImport takes the
+entries as an argument, which keeps the state machine free of I/O and testable."
+```
+
+---
+
+## Task 23: Documentation, screenshots, and live verification
+
+**Files:**
+- Modify: `README.md`, `README.ko.md`, `test/manifest.test.mjs`, `tools/screenshots.py`
+
+- [ ] **Step 1: Update the key table in both READMEs**
+
+Replace the whole Keys table. English:
+
+```markdown
+| Key | In the list | In the add/edit form |
+| --- | --- | --- |
+| `1`–`9`, `0`, `a`–`z` | run the command in that slot | typed into the focused text field |
+| `↑` `↓` `←` `→` | move through the grid | previous / next field |
+| `Tab` / `Shift-Tab` | — | next / previous field |
+| `Enter` | run the highlighted command | save |
+| `A` | add a command | — |
+| `E` | edit the highlighted command | — |
+| `D` then `y` | delete the highlighted command | — |
+| `O` | open `commands.toml` in your editor | — |
+| `I` | import from your herdr config | — |
+| `Space` | — | change `Slot`, `Type` or `Cwd` |
+| `Backspace` | — | delete the last character |
+| `Esc` | close the popup | discard and go back |
+| `Ctrl-C` | close the popup | close the popup |
+```
+
+Replace the badge paragraph with:
+
+> **Lowercase and digits run; uppercase acts.** The key that runs a command is
+> stored with the command as its `slot`, so it never changes when the list is
+> reordered — `d` runs whatever lives in slot `d`. All 36 slots are usable.
+>
+> Two things follow from that. `j` and `k` are slots now, so moving around is
+> arrow keys only. `q` is a slot now, so `Esc` is how you close the popup.
+
+Korean equivalents, same structure, with the note as:
+
+> **소문자·숫자는 실행, 대문자는 동작입니다.** 커맨드를 실행하는 키는 `slot`으로
+> 커맨드에 함께 저장되므로, 목록 순서를 바꿔도 변하지 않습니다 — `d`는 언제나
+> `d` 슬롯의 커맨드를 실행합니다. 슬롯 36개를 모두 쓸 수 있습니다.
+>
+> 여기서 두 가지가 따라옵니다. `j`·`k`가 슬롯이 되었으니 이동은 방향키로만 하고,
+> `q`가 슬롯이 되었으니 팝업은 `Esc`로 닫습니다.
+
+- [ ] **Step 2: Document the three command types**
+
+Replace the `type` row of the field table and the "Anything herdr can do" section.
+The table row, English: `` | `type` | `shell`, `pane`, or `plugin_action`. | ``
+and add a `slot` row: `` | `slot` | the key that runs it: one of `1`-`9`, `0`, `a`-`z`. Omit it and the next free slot is assigned. | ``
+
+Then a new subsection, English:
+
+```markdown
+### Where the output goes
+
+| `type` | What happens |
+| --- | --- |
+| `shell` | Runs detached in the background, in the resolved `cwd`. Use it for things that open their own window — `code .`, `gh browse`. You will not see stdout. |
+| `pane` | Typed into the pane you were looking at and run there, so you see the output. Use it for `echo`, `git status`, `npm test`. |
+| `plugin_action` | Invokes another herdr plugin's action, as `<plugin_id>.<action_id>`. |
+
+`pane` commands are refused when the focused pane is running an agent, because
+`herdr` would submit the line to that agent as a prompt instead of to a shell. You
+get a notification saying so rather than a prompt you did not mean to send.
+```
+
+Korean equivalent, with the note as:
+
+> 포커스된 페인에서 agent가 돌고 있으면 `pane` 커맨드는 거부됩니다. 그 경우 herdr가
+> 명령을 셸이 아니라 **agent에게 프롬프트로** 넣기 때문입니다. 의도하지 않은 프롬프트를
+> 보내는 대신 알림으로 이유를 알려줍니다.
+
+- [ ] **Step 3: Document the editor change and the importer**
+
+Replace the `editor` row: `` | `editor` | Candidate editors, one command line per entry. One entry opens straight away; several make the popup ask which. Omit it or leave it empty to auto-detect from `$VISUAL`, `$EDITOR`, then your `PATH`. | ``
+
+Add, right after the config example, English:
+
+```markdown
+Flags belong inside one entry, not as separate entries:
+
+```toml
+editor = ["code --new-window", "nvim", "vim"]
+```
+
+That is three candidates, the first of which passes a flag.
+```
+
+And a short importer section before "Actions", English:
+
+```markdown
+### Importing what you already have
+
+Press `I` and Command Center reads the `[[keys.command]]` entries out of your
+`~/.config/herdr/config.toml` — the prefix keybindings this plugin exists to
+replace — and offers them. Choosing one opens the add form prefilled, so you still
+choose the slot and can fix the label before it is written. Entries you have
+already added are marked, and entries whose herdr type has no equivalent here are
+listed with the reason rather than quietly dropped.
+```
+
+Korean equivalents in the same places.
+
+- [ ] **Step 4: Update the config example in both READMEs**
+
+```toml
+schema_version = 1
+editor = ["code --new-window", "nvim"]
+
+# 자주 쓰는 것들
+[[commands]]
+slot = "1"
+label = "Open in VS Code"
+type = "shell"
+command = "code ."
+cwd = "focused"
+
+[[commands]]
+slot = "s"
+label = "git status"
+type = "pane"
+command = "git status --short --branch"
+
+[[commands]]
+slot = "f"
+label = "File explorer"
+type = "plugin_action"
+command = "ray.file-explorer.open"
+
+# [[commands]]                 <- commented out for now
+# slot = "g"
+# label = "Lazygit"
+# type = "pane"
+# command = "lazygit"
+```
+
+- [ ] **Step 5: Update the doc-consistency tests**
+
+In `test/manifest.test.mjs`, extend the documented-field list and add the new
+vocabulary:
+
+```js
+    for (const field of ['schema_version', 'editor', 'slot', 'label', 'shell', 'pane', 'plugin_action', 'focused', 'workspace', 'description']) {
+      assert.ok(text.includes(field), `${name} does not document ${field}`);
+    }
+```
+
+and add:
+
+```js
+test('both READMEs document the uppercase action keys', async () => {
+  for (const name of ['README.md', 'README.ko.md']) {
+    const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
+    for (const key of ['`A`', '`E`', '`D`', '`O`', '`I`']) {
+      assert.ok(text.includes(key), `${name} does not document the ${key} action`);
+    }
+    assert.ok(!text.includes('1-9 run'), `${name} still describes the old numeric badges`);
+  }
+});
+```
+
+- [ ] **Step 6: Regenerate the screenshots**
+
+`tools/screenshots.py` needs a bigger terminal and a demo config with slots. Set
+`COLS = 120`, give every `[[commands]]` block in `DEMO` an explicit `slot`, grow it
+to about 14 commands so the grid and the letter slots both show, and add a fourth
+shot for the import list:
+
+```python
+    ('popup-import', DEMO, ['I'], 14, 'importing from the herdr config'),
+```
+
+The import shot needs a herdr config to read, so `capture()` must also write one
+and point `HERDR_CONFIG_PATH` at it. Add to the env it builds:
+
+```python
+        'HERDR_CONFIG_PATH': str(cfg / 'herdr-config.toml'),
+```
+
+and write that file next to `commands.toml` with a handful of `[[keys.command]]`
+entries.
+
+Then regenerate and convert:
+
+```bash
+python3 tools/screenshots.py
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+for n in popup-list popup-form popup-error popup-import; do
+  W=$(python3 -c "import re;print(re.search(r'width=\"(\d+)\"',open('docs/$n.svg').read()).group(1))")
+  H=$(python3 -c "import re;print(re.search(r'height=\"(\d+)\"',open('docs/$n.svg').read()).group(1))")
+  "$CHROME" --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
+    --default-background-color=00000000 --window-size="$W,$H" \
+    --screenshot="docs/$n.png" "docs/$n.svg"
+done
+```
+
+Embed `docs/popup-import.png` in both READMEs inside the new importer section, with
+alt text in the matching language, and bump the screenshot count assertion in
+`test/manifest.test.mjs` from 3 to 4.
+
+- [ ] **Step 7: Run the whole suite**
+
+Run: `npm test`
+Expected: PASS, 0 fail.
+
+- [ ] **Step 8: Commit the docs**
+
+```bash
+git add README.md README.ko.md docs tools/screenshots.py test/manifest.test.mjs
+git commit -m "docs: document slots, the grid, the three command types, and importing
+
+The key contract changed enough that the old table was actively misleading:
+lowercase runs, uppercase acts, movement is arrows only because j and k are slots,
+and Esc is the only way out because q is one.
+
+Also documents where each command type's output goes — the reported surprise was a
+shell command producing no visible output — that pane commands are refused when an
+agent owns the focused pane and why, and that editor entries are candidate command
+lines with flags belonging inside one entry."
+```
+
+- [ ] **Step 9: Relink and verify against the live herdr**
+
+```bash
+herdr plugin link "$PWD"
+herdr plugin list | grep -A1 command-center
+```
+
+Expected: the link succeeds, which means `npm ci` and `npm test` both passed.
+
+- [ ] **Step 10: Verify the migration of an existing config**
+
+The live config has three commands with no `slot`. Confirm they gain slots 1-3
+without losing anything:
+
+```bash
+CFG=$(herdr plugin config-dir cdragon.command-center)
+cp "$CFG/commands.toml" /tmp/commands.before.toml
+node -e "import('./src/store.mjs').then(async ({loadStore, saveStore}) => {
+  const f = process.argv[1];
+  const l = await loadStore(f);
+  console.log('slots:', l.doc.commands.map((c) => c.slot + '=' + c.label).join(', '));
+  await saveStore(f, l.doc, { expectedRaw: l.raw });
+});" "$CFG/commands.toml"
+diff /tmp/commands.before.toml "$CFG/commands.toml" || true
+```
+
+Expected: slots `1`, `2`, `3` assigned in order. The diff shows only added `slot`
+lines — a save must not rewrite anything else.
+
+- [ ] **Step 11: Verify a pane command end to end, and the agent guard**
+
+Create a throwaway unfocused tab so nothing the user is doing is disturbed:
+
+```bash
+TAB=$(herdr tab create --no-focus --label cc-check | python3 -c "import json,sys;print(json.load(sys.stdin)['result']['tab']['tab_id'])")
+PANE=$(herdr api snapshot | python3 -c "
+import json,sys;s=json.load(sys.stdin)['result']['snapshot']
+print(next(p['pane_id'] for p in s['panes'] if p['tab_id']=='$TAB'))")
+sleep 2
+node -e "import('./src/executor.mjs').then(async ({executeCommand}) => {
+  const cp = await import('node:child_process'); const { promisify } = await import('node:util');
+  await executeCommand(
+    { id: 'echo', slot: '1', label: 'Echo', type: 'pane', command: 'echo it-works | tr a-z A-Z', cwd: 'focused', description: '' },
+    { context: { focusedPaneId: process.argv[1], focusedPaneAgent: null },
+      spawn: () => {}, execFile: promisify(cp.execFile), sleep: async () => {} });
+})" "$PANE"
+sleep 2
+herdr pane read "$PANE" --format text | tail -4
+herdr tab close "$TAB"
+```
+
+Expected: the pane shows `IT-WORKS`. Then confirm the guard by rerunning with
+`focusedPaneAgent: 'claude'` and checking it rejects without calling herdr.
+
+- [ ] **Step 12: Push**
+
+```bash
+git push
+```
+
+---
