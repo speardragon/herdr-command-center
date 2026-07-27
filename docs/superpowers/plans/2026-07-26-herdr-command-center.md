@@ -7097,7 +7097,7 @@ movement is arrow keys only. `q` is a slot now, so `Esc` is the only way to clos
 - Slots are `SLOT_KEYS` = `'1234567890abcdefghijklmnopqrstuvwxyz'`, in that order. Assignment walks that order, so the first nine commands still land on `1`–`9` exactly as before.
 - Every command has exactly one slot. `MAX_COMMANDS` drops from 200 to 36, because past 36 the one-keystroke premise is gone and a silent 37th command that no key reaches would be worse than an error.
 - `slot` is normalized to lowercase: uppercase is the action namespace, so storing `"G"` would imply a key that runs nothing.
-- `editor` keeps its key name but changes meaning: **each array entry is one candidate command line**, not one argv word. `editor = ["code"]` behaves exactly as before; `editor = ["code", "vim"]` now offers a choice, which is what it looks like it should do. An empty or absent `editor` auto-detects.
+- `editor` keeps its key name but changes meaning: **each array entry is one candidate command line**, not one argv word. `editor = ["code"]` behaves exactly as before; `editor = ["code", "vim"]` now offers a choice, which is what it looks like it should do. An empty or absent `editor` auto-detects and opens the best guess without asking — naming several editors is itself the request to be asked, so a guess must not become a question every time.
 - `reduceKey` gains a third parameter, `{ columns }`. The reducer stays free of layout knowledge; the popup passes the grid width in from the renderer.
 
 ---
@@ -8116,16 +8116,17 @@ Import `resolveEditors` from `../src/editor.mjs` and `beginEditorPick` from
 
 ```js
         if (effect.type === 'open-config') {
-          const editor = effect.editor
-            ?? (() => {
-              const candidates = resolveEditors(view.doc, { env });
-              return candidates.length === 1 ? candidates[0] : null;
-            })();
+          const candidates = resolveEditors(view.doc, { env });
+          // Only ask when the user listed several themselves: naming more than one
+          // editor *is* the request to be asked. When nothing is configured we are
+          // guessing from $VISUAL/$EDITOR/PATH, and a guess should not become a
+          // question every single time the config file is opened.
+          const asks = (view.doc.editor ?? []).length > 1;
+          const editor = effect.editor ?? (asks ? null : candidates[0] ?? null);
           if (editor) {
             spawnRunner({ kind: 'open-config', editor });
             return 0;
           }
-          const candidates = resolveEditors(view.doc, { env });
           if (candidates.length === 0) {
             view = createView({
               doc: view.doc,

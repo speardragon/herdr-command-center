@@ -437,3 +437,18 @@ test('the popup leaves the terminal with a visible default cursor', async () => 
   assert.ok(last.includes('\u001b[0 q'), 'the cursor shape is reset');
   assert.ok(last.includes('\u001b[?25h'), 'and the cursor is left visible');
 });
+
+test('an auto-detected editor opens without asking, but a configured list asks', async () => {
+  const { dir, file } = await scratch();
+  // Nothing configured: we are guessing, so do not turn the guess into a question.
+  await writeFile(file, renderConfigToml(normalizeConfig({ editor: [], commands: [] })), 'utf8');
+  const auto = await harness(['O'], { dir, extraEnv: { EDITOR: 'vim' } });
+  assert.equal(auto.spawns.length, 1, 'opened straight away');
+  assert.equal(JSON.parse(auto.spawns[0].options.env.COMMAND_CENTER_TASK_JSON).editor, 'vim');
+
+  // Several named on purpose: that is the request to be asked.
+  await writeFile(file, renderConfigToml(normalizeConfig({ editor: ['code', 'vim'], commands: [] })), 'utf8');
+  const asked = await harness(['O', '\u001b'], { dir });
+  assert.deepEqual(asked.spawns, [], 'nothing opened until a choice was made');
+  assert.ok(asked.stdout.frames.some((f) => f.includes('Open commands.toml with')));
+});
