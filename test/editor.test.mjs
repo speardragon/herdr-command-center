@@ -60,10 +60,36 @@ test('COMMON_EDITORS covers the obvious choices without assuming VS Code', () =>
 
 test('resolveEditors uses the config when it names any candidate', () => {
   assert.deepEqual(
-    resolveEditors({ editor: ['code', 'vim'] }, { env: {}, exists: nothingInstalled }),
+    resolveEditors({ editor: ['code', 'vim'] }, { env: {}, exists: everythingInstalled }),
     ['code', 'vim'],
-    'a configured candidate is honoured even if we cannot see it on PATH',
   );
+});
+
+test('resolveEditors hides a configured editor that is not installed', () => {
+  // The seeded list names every editor the plugin knows about, so most of it is
+  // missing on any one machine. Offering those would spawn "command not found"
+  // into a detached process the user never sees.
+  assert.deepEqual(
+    resolveEditors({ editor: ['zed', 'code', 'nvim'] }, { env: {}, exists: (name) => name === 'code' }),
+    ['code'],
+  );
+});
+
+test('resolveEditors trusts a candidate that carries its own arguments', () => {
+  // Not a bare name, so there is nothing to look up: the user wrote an
+  // invocation on purpose, exactly like $VISUAL or $EDITOR.
+  assert.deepEqual(
+    resolveEditors({ editor: ['code --new-window'] }, { env: {}, exists: nothingInstalled }),
+    ['code --new-window'],
+  );
+});
+
+test('resolveEditors falls back to detection when none of the configured editors are here', () => {
+  const options = { env: { EDITOR: 'vim' }, exists: nothingInstalled };
+  assert.deepEqual(resolveEditors({ editor: ['zed', 'code'] }, options), ['vim']);
+  // And with nothing to detect either, an empty list is how the popup knows to
+  // say so rather than opening nothing.
+  assert.deepEqual(resolveEditors({ editor: ['zed'] }, { env: {}, exists: nothingInstalled }), []);
 });
 
 test('resolveEditors auto-detects when the config names none', () => {

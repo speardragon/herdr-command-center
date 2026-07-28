@@ -8,6 +8,7 @@ import { editConfig } from '../bin/edit-config.mjs';
 import { openPalette } from '../bin/open.mjs';
 import { normalizeConfig } from '../src/schema.mjs';
 import { renderConfigToml } from '../src/toml-config.mjs';
+import { fakePath } from './helpers/fake-path.mjs';
 
 function stderrSink() {
   const lines = [];
@@ -139,7 +140,11 @@ test('editConfig picks the first candidate and logs it when several are configur
   const events = [];
   const spawns = [];
   const code = await editConfig({
-    env: { HERDR_PLUGIN_CONFIG_DIR: dir, HERDR_PLUGIN_STATE_DIR: join(dir, 'state') },
+    env: {
+      HERDR_PLUGIN_CONFIG_DIR: dir,
+      HERDR_PLUGIN_STATE_DIR: join(dir, 'state'),
+      PATH: await fakePath(dir, ['code', 'vim']),
+    },
     execFile: async () => { throw new Error('execFile must not be needed'); },
     spawn: (file, args, options) => {
       spawns.push({ file, args, options });

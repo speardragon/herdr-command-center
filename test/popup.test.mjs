@@ -13,6 +13,7 @@ import {
   createFakeStdin,
   createFakeStdout,
 } from './helpers/fake-tty.mjs';
+import { fakePath } from './helpers/fake-path.mjs';
 
 const CONTEXT = {
   focusedPaneCwd: '/Users/cdragon/repo', workspaceCwd: '/Users/cdragon', focusedPaneId: null, focusedPaneAgent: null,
@@ -192,7 +193,10 @@ test('O opens a picker when commands.toml names several editor candidates', asyn
     editor: ['code', 'vim'],
     commands: [],
   })), 'utf8');
-  const { spawns, stdout } = await harness(['O'], { dir });
+  const { spawns, stdout } = await harness(['O'], {
+    dir,
+    extraEnv: { PATH: await fakePath(dir, ['code', 'vim']) },
+  });
   // No candidate is spawned yet: the popup is waiting on a pick.
   assert.deepEqual(spawns, []);
   assert.match(stdout.lastFrame, /Open commands\.toml with/u);
@@ -207,7 +211,10 @@ test('choosing a candidate from the editor picker hands it to the runner', async
     editor: ['code', 'vim'],
     commands: [],
   })), 'utf8');
-  const { code, spawns } = await harness(['O', '2'], { dir });
+  const { code, spawns } = await harness(['O', '2'], {
+    dir,
+    extraEnv: { PATH: await fakePath(dir, ['code', 'vim']) },
+  });
   assert.equal(code, 0);
   const task = taskFrom(spawns[0]);
   assert.equal(task.kind, 'open-config');
@@ -221,7 +228,10 @@ test('escape backs out of the editor picker without spawning', async () => {
     editor: ['code', 'vim'],
     commands: [],
   })), 'utf8');
-  const { code, spawns } = await harness(['O', '\u001b', '\u001b'], { dir });
+  const { code, spawns } = await harness(['O', '\u001b', '\u001b'], {
+    dir,
+    extraEnv: { PATH: await fakePath(dir, ['code', 'vim']) },
+  });
   assert.equal(code, 0);
   assert.deepEqual(spawns, []);
 });
@@ -448,9 +458,12 @@ test('an auto-detected editor opens without asking, but a configured list asks',
   assert.equal(auto.spawns.length, 1, 'opened straight away');
   assert.equal(JSON.parse(auto.spawns[0].options.env.COMMAND_CENTER_TASK_JSON).editor, 'vim');
 
-  // Several named on purpose: that is the request to be asked.
+  // Several named on purpose, and both really here: that is the request to be asked.
   await writeFile(file, renderConfigToml(normalizeConfig({ editor: ['code', 'vim'], commands: [] })), 'utf8');
-  const asked = await harness(['O', '\u001b'], { dir });
+  const asked = await harness(['O', '\u001b'], {
+    dir,
+    extraEnv: { PATH: await fakePath(dir, ['code', 'vim']) },
+  });
   assert.deepEqual(asked.spawns, [], 'nothing opened until a choice was made');
   assert.ok(asked.stdout.frames.some((f) => f.includes('Open commands.toml with')));
 });

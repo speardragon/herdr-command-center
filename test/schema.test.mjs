@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { COMMON_EDITORS } from '../src/editor.mjs';
 import {
   COMMAND_TYPES,
   CWD_MODES,
@@ -149,9 +150,16 @@ test('normalizeCommand rejects a multi-line command', () => {
 test('defaultConfig is valid and normalizes to itself', () => {
   const doc = defaultConfig();
   assert.equal(doc.schema_version, 1);
-  assert.deepEqual(doc.editor, []);
+  // Seeded with the whole candidate list, so a fresh file shows the choice
+  // rather than hiding it in a PATH lookup.
+  assert.deepEqual(doc.editor, [...COMMON_EDITORS]);
   assert.ok(doc.commands.length >= 1);
   assert.deepEqual(normalizeConfig(doc), doc);
+});
+
+test('the seeded editor list fits inside the editor cap', () => {
+  // The cap has to leave room for the user to add to the seed, not just match it.
+  assert.ok(normalizeConfig({ editor: [...COMMON_EDITORS, 'my-editor'] }).editor.length > COMMON_EDITORS.length);
 });
 
 test('normalizeConfig fills missing schema_version, editor, and commands', () => {

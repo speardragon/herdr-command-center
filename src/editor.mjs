@@ -3,9 +3,10 @@ import { delimiter, join } from 'node:path';
 
 // Deliberately not just "code": the plugin cannot assume VS Code is installed or
 // that its shell integration is on the PATH. Ordered by how likely a terminal
-// user is to want each one.
+// user is to want each one. This is also what a fresh commands.toml is seeded
+// with, so it doubles as the menu the user edits down to their own preference.
 export const COMMON_EDITORS = Object.freeze([
-  'code', 'cursor', 'subl', 'nvim', 'vim', 'hx', 'nano',
+  'code', 'cursor', 'zed', 'subl', 'nvim', 'vim', 'hx', 'nano',
 ]);
 
 function onPath(name, env = process.env) {
@@ -36,11 +37,26 @@ export function detectEditors({ env = process.env, exists = (name) => onPath(nam
   return candidates;
 }
 
-export function resolveEditors(doc, options = {}) {
+// A bare name is something we can look up; anything carrying arguments is the
+// user's own invocation and is taken on trust, exactly like $VISUAL and $EDITOR.
+function isFindable(candidate) {
+  return !/\s/u.test(candidate);
+}
+
+export function resolveEditors(doc, { env = process.env, exists = (name) => onPath(name, env) } = {}) {
   const configured = Array.isArray(doc?.editor)
-    ? doc.editor.filter((entry) => typeof entry === 'string' && entry.trim().length > 0)
+    ? doc.editor.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean)
     : [];
-  return configured.length > 0 ? configured : detectEditors(options);
+  if (configured.length === 0) return detectEditors({ env, exists });
+  // A fresh commands.toml is seeded with every editor the plugin knows about, so
+  // most of the list is missing on any given machine. Hiding what is not there
+  // keeps the picker from offering a choice that would spawn "command not found"
+  // into a detached process nobody ever sees.
+  const installed = configured.filter((entry) => !isFindable(entry) || exists(entry));
+  // If none of them are here, fall back to detection rather than to the list: it
+  // still honours $VISUAL and $EDITOR, and an empty result is how the popup knows
+  // to say so out loud instead of opening nothing.
+  return installed.length > 0 ? installed : detectEditors({ env, exists });
 }
 
 export function editorSpawn(commandLine, filePath, { shell } = {}) {

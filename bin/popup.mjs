@@ -188,11 +188,12 @@ export async function runPopup({
         }
         if (effect.type === 'open-config') {
           const candidates = resolveEditors(view.doc, { env });
-          // Only ask when the user listed several themselves: naming more than one
-          // editor *is* the request to be asked. When nothing is configured we are
-          // guessing from $VISUAL/$EDITOR/PATH, and a guess should not become a
-          // question every single time the config file is opened.
-          const asks = (view.doc.editor ?? []).length > 1;
+          // Ask only when the config names editors and more than one of them is
+          // actually here — trimming the list to one is how the user says "stop
+          // asking". When nothing is configured we are guessing from
+          // $VISUAL/$EDITOR/PATH, and a guess should not become a question every
+          // single time the config file is opened.
+          const asks = (view.doc.editor ?? []).length > 0 && candidates.length > 1;
           const editor = effect.editor ?? (asks ? null : candidates[0] ?? null);
           if (editor) {
             spawnRunner({ kind: 'open-config', editor });

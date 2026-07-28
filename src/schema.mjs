@@ -1,5 +1,7 @@
 import { isAbsolute } from 'node:path';
 
+import { COMMON_EDITORS } from './editor.mjs';
+
 export const SCHEMA_VERSION = 1;
 export const COMMAND_TYPES = Object.freeze(['shell', 'pane', 'plugin_action']);
 export const CWD_MODES = Object.freeze(['focused', 'workspace']);
@@ -13,7 +15,9 @@ const MAX_ID_LENGTH = 64;
 // namespace in the list, so an uppercase slot would name a key that runs nothing.
 export const SLOT_KEYS = '1234567890abcdefghijklmnopqrstuvwxyz';
 export const MAX_COMMANDS = SLOT_KEYS.length;
-const MAX_EDITOR_ARGS = 8;
+// The seeded list already fills eight entries, so the cap has to leave room for
+// the user to add their own on top of it.
+const MAX_EDITOR_ARGS = 16;
 // Unicode-aware so a Korean label yields a readable id instead of "command-7".
 const ID_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N}_-]*$/u;
 
@@ -186,7 +190,11 @@ export function normalizeConfig(value) {
 export function defaultConfig() {
   return {
     schema_version: SCHEMA_VERSION,
-    editor: [],
+    // Seeded with every editor the plugin knows about, in preference order, so
+    // the choice is visible and editable in the file rather than hidden in a
+    // PATH lookup. Whatever is not installed is filtered out before the picker
+    // ever sees it — see resolveEditors.
+    editor: [...COMMON_EDITORS],
     commands: [
       {
         id: 'open-in-vs-code',

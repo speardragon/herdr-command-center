@@ -77,7 +77,7 @@ test('renderConfigToml round-trips the default config exactly', () => {
 
 test('renderConfigToml writes the header keys before any block', () => {
   const text = renderConfigToml(defaultConfig());
-  assert.match(text, /^schema_version = 1\neditor = \[\]\n/u);
+  assert.match(text, /^schema_version = 1\neditor = \["code", .*"nano"\]\n/u);
   assert.ok(text.indexOf('schema_version') < text.indexOf('[[commands]]'));
 });
 
