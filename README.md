@@ -14,6 +14,17 @@ git-status command runs — no arrow keys, no remembering which prefix key it wa
 under. The line under the grid shows what the highlighted command actually does
 before you commit to it.
 
+The grid draws all 36 slots, filling top to bottom down each column, and marks
+the unclaimed ones `(empty)` in your theme's bright-black — the colour the theme
+author already placed just off their own background. What is taken and what is
+still free is one glance rather than a guess, and `Enter` on an empty slot opens
+the add form already aimed at it.
+
+On a light terminal the empty cells use bright-white instead, so they recede
+toward that background too. Which side you are on is read from `COLORFGBG`;
+terminals that do not report it are treated as dark, which is what a terminal
+running a TUI almost always is.
+
 The point is that you stop memorizing. As you install more herdr plugins, each
 one wants its own `prefix+<key>`, and eventually you cannot remember which key
 does what. Command Center gives all of them one door.
@@ -71,7 +82,7 @@ herdr server reload-config
 | `1`–`9`, `0`, `a`–`z` | run the command in that slot | typed into the focused text field |
 | `↑` `↓` `←` `→` | move through the grid | previous / next field |
 | `Tab` / `Shift-Tab` | — | next / previous field |
-| `Enter` | run the highlighted command | save |
+| `Enter` | run the highlighted command, or fill it if the slot is empty | save |
 | `shift+a` | add a command | — |
 | `shift+e` | edit the highlighted command | — |
 | `shift+d` then `y` | delete the highlighted command | — |
@@ -84,7 +95,8 @@ herdr server reload-config
 
 **Lowercase and digits run; uppercase acts.** The key that runs a command is
 stored with the command as its `slot`, so it never changes when the list is
-reordered — `d` runs whatever lives in slot `d`. All 36 slots are usable.
+reordered — `d` runs whatever lives in slot `d`. All 36 slots are usable, and
+all 36 are on screen whether or not anything claims them yet.
 
 Two things follow from that. `j` and `k` are slots now, so moving around is
 arrow keys only. `q` is a slot now, so `Esc` is how you close the popup.
@@ -158,10 +170,20 @@ editor = ["code --new-window", "nvim", "vim"]
 
 That is three candidates, the first of which passes a flag.
 
+A fresh `commands.toml` is seeded with every editor the plugin knows about —
+`code`, `cursor`, `zed`, `subl`, `nvim`, `vim`, `hx`, `nano` — so the list is
+something you edit down rather than something you have to discover. Entries that
+are not on your `PATH` are dropped before the picker sees them, because opening
+an editor that is not installed would spawn `command not found` into a detached
+process you would never see. An entry carrying its own arguments is taken on
+trust and never filtered, the same way `$VISUAL` and `$EDITOR` are.
+
+Trim the list to one entry to stop being asked.
+
 | Field | Meaning |
 | --- | --- |
 | `schema_version` | Always `1`. |
-| `editor` | Candidate editors, one command line per entry. One entry opens straight away; several make the popup ask which. Omit it or leave it empty to auto-detect from `$VISUAL`, `$EDITOR`, then your `PATH`. |
+| `editor` | Candidate editors, one command line per entry; seeded with all of them on first run. Whatever is not on your `PATH` is dropped, then one surviving entry opens straight away and several make the popup ask which. Leave it empty to auto-detect from `$VISUAL`, `$EDITOR`, then your `PATH`. |
 | `id` | stable identifier. Omit it and one is derived from the label (Korean labels keep readable ids). |
 | `slot` | the key that runs it: one of `1`-`9`, `0`, `a`-`z`. Omit it and the next free slot is assigned. |
 | `label` | what the popup shows. Up to 80 characters. |

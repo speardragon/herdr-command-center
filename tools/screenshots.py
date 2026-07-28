@@ -192,6 +192,7 @@ def capture(name, config_text, keys, rows, settle=0.75):
         'COMMAND_CENTER_CONTEXT_JSON': json.dumps(
             {'focusedPaneCwd': '/Users/cdragon/dev/herdr', 'workspaceCwd': '/Users/cdragon/dev'}),
         'TERM': 'xterm-256color',
+        'COLORFGBG': '15;0',
         'COLUMNS': str(COLS),
         'LINES': str(rows),
     })
@@ -264,6 +265,7 @@ BG = '#16161e'
 FG = '#c0caf5'
 CYAN = '#7dcfff'
 YELLOW = '#e0af68'
+FAINT = '#414868'  # bright-black: what [90m resolves to in a tokyo-night-ish theme
 DIM_OPACITY = '0.55'
 
 FONT = ("ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, "
@@ -324,6 +326,8 @@ def runs(line):
                 style['color'] = YELLOW
             elif code == '32':
                 style['color'] = '#9ece6a'
+            elif code == '90':
+                style['color'] = FAINT
         pos = m.end()
     if pos < len(line):
         out.append((line[pos:], dict(style)))
@@ -352,26 +356,28 @@ def render(frame, cols=88):
         y = PAD_Y + row * LINE_H + FONT_SIZE * 0.82
         col = 0
         for text, style in runs(line):
-            stripped = text
-            if stripped.strip():
-                x = PAD_X + col * CELL_W
-                attrs = [f'x="{x:.2f}"', f'y="{y:.2f}"']
-                attrs.append(f'fill="{style["color"] or FG}"')
-                if style['bold']:
-                    attrs.append('font-weight="600"')
-                if style['dim']:
-                    attrs.append(f'opacity="{DIM_OPACITY}"')
-                attrs.append('xml:space="preserve"')
-                # Pin the run to exactly the cells it occupies. Without this the
-                # browser's CJK fallback font does not advance exactly two cells
-                # per syllable, so everything after a Korean label drifts and the
-                # picture shows a misalignment the real terminal does not have.
-                cells = display_width(text)
-                if cells:
-                    attrs.append(f'textLength="{cells * CELL_W:.2f}"')
-                    attrs.append('lengthAdjust="spacingAndGlyphs"')
-                parts.append(f'<text {" ".join(attrs)}>{html.escape(text)}</text>')
-            col += display_width(text)
+            # Pin each word to exactly the cells it occupies. textLength alone is
+            # not enough when one run spans several grid cells: the browser's CJK
+            # fallback font does not advance exactly two cells per syllable, and
+            # spacingAndGlyphs smears the correction across the whole run, which
+            # drags the *next* grid column out of line. Splitting at the gaps
+            # (2+ spaces) pins every column edge individually.
+            for segment in re.split(r'( {2,})', text):
+                if segment.strip():
+                    x = PAD_X + col * CELL_W
+                    attrs = [f'x="{x:.2f}"', f'y="{y:.2f}"']
+                    attrs.append(f'fill="{style["color"] or FG}"')
+                    if style['bold']:
+                        attrs.append('font-weight="600"')
+                    if style['dim']:
+                        attrs.append(f'opacity="{DIM_OPACITY}"')
+                    attrs.append('xml:space="preserve"')
+                    cells = display_width(segment)
+                    if cells:
+                        attrs.append(f'textLength="{cells * CELL_W:.2f}"')
+                        attrs.append('lengthAdjust="spacingAndGlyphs"')
+                    parts.append(f'<text {" ".join(attrs)}>{html.escape(segment)}</text>')
+                col += display_width(segment)
     if caret is not None:
         crow, ccol = caret
         x = PAD_X + ccol * CELL_W

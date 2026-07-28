@@ -1,12 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1296" height="331" viewBox="0 0 1296 331" font-family="ui-monospace, SFMono-Regular, &#x27;SF Mono&#x27;, Menlo, Consolas, &#x27;DejaVu Sans Mono&#x27;, &#x27;Apple SD Gothic Neo&#x27;, monospace" font-size="15.0">
 <rect width="1296" height="331" rx="10.0" fill="#16161e"/>
 <text x="36.00" y="51.30" fill="#c0caf5" font-weight="600" xml:space="preserve" textLength="252.00" lengthAdjust="spacingAndGlyphs">Command Center · Add command</text>
-<text x="18.00" y="97.30" fill="#c0caf5" xml:space="preserve" textLength="270.00" lengthAdjust="spacingAndGlyphs">    Label        배포 스크립트</text>
-<text x="18.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="216.00" lengthAdjust="spacingAndGlyphs">    Slot         a  (←→)</text>
-<text x="18.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="252.00" lengthAdjust="spacingAndGlyphs">    Type         shell  (←→)</text>
-<text x="36.00" y="166.30" fill="#7dcfff" font-weight="600" xml:space="preserve" textLength="306.00" lengthAdjust="spacingAndGlyphs">› Command      ./scripts/deploy.sh</text>
-<text x="18.00" y="189.30" fill="#c0caf5" xml:space="preserve" textLength="270.00" lengthAdjust="spacingAndGlyphs">    Cwd          focused  (←→)</text>
-<text x="18.00" y="212.30" fill="#c0caf5" xml:space="preserve" textLength="153.00" lengthAdjust="spacingAndGlyphs">    Description  </text>
+<text x="54.00" y="97.30" fill="#c0caf5" xml:space="preserve" textLength="45.00" lengthAdjust="spacingAndGlyphs">Label</text>
+<text x="171.00" y="97.30" fill="#c0caf5" xml:space="preserve" textLength="117.00" lengthAdjust="spacingAndGlyphs">배포 스크립트</text>
+<text x="54.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="36.00" lengthAdjust="spacingAndGlyphs">Slot</text>
+<text x="171.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">a</text>
+<text x="198.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="36.00" lengthAdjust="spacingAndGlyphs">(←→)</text>
+<text x="54.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="36.00" lengthAdjust="spacingAndGlyphs">Type</text>
+<text x="171.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="45.00" lengthAdjust="spacingAndGlyphs">shell</text>
+<text x="234.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="36.00" lengthAdjust="spacingAndGlyphs">(←→)</text>
+<text x="36.00" y="166.30" fill="#7dcfff" font-weight="600" xml:space="preserve" textLength="81.00" lengthAdjust="spacingAndGlyphs">› Command</text>
+<text x="171.00" y="166.30" fill="#7dcfff" font-weight="600" xml:space="preserve" textLength="171.00" lengthAdjust="spacingAndGlyphs">./scripts/deploy.sh</text>
+<text x="54.00" y="189.30" fill="#c0caf5" xml:space="preserve" textLength="27.00" lengthAdjust="spacingAndGlyphs">Cwd</text>
+<text x="171.00" y="189.30" fill="#c0caf5" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">focused</text>
+<text x="252.00" y="189.30" fill="#c0caf5" xml:space="preserve" textLength="36.00" lengthAdjust="spacingAndGlyphs">(←→)</text>
+<text x="54.00" y="212.30" fill="#c0caf5" xml:space="preserve" textLength="99.00" lengthAdjust="spacingAndGlyphs">Description</text>
 <text x="36.00" y="281.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="585.00" lengthAdjust="spacingAndGlyphs">type to edit · tab/↑↓ field · ←→ change · enter save · esc cancel</text>
 <rect x="342.00" y="156.00" width="2.2" height="18.0" rx="1" fill="#7dcfff"/>
 </svg>

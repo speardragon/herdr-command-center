@@ -1,12 +1,79 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1296" height="446" viewBox="0 0 1296 446" font-family="ui-monospace, SFMono-Regular, &#x27;SF Mono&#x27;, Menlo, Consolas, &#x27;DejaVu Sans Mono&#x27;, &#x27;Apple SD Gothic Neo&#x27;, monospace" font-size="15.0">
 <rect width="1296" height="446" rx="10.0" fill="#16161e"/>
 <text x="36.00" y="51.30" fill="#c0caf5" font-weight="600" xml:space="preserve" textLength="252.00" lengthAdjust="spacingAndGlyphs">Command Center · 14 commands</text>
-<text x="36.00" y="97.30" fill="#7dcfff" font-weight="600" xml:space="preserve" textLength="306.00" lengthAdjust="spacingAndGlyphs">› 1  Open in VS Code              </text>
-<text x="342.00" y="97.30" fill="#c0caf5" xml:space="preserve" textLength="756.00" lengthAdjust="spacingAndGlyphs">  2  Open repo on GitHub            3  Open pull request              4  브랜치 정리</text>
-<text x="18.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="1152.00" lengthAdjust="spacingAndGlyphs">    5  Lazygit in a split             6  서버 로그                      7  워크트리 목록                  8  Reload herdr config</text>
-<text x="18.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="1098.00" lengthAdjust="spacingAndGlyphs">    9  Open changelog                 0  Reinstall dependencies         s  git status                     f  File explorer</text>
-<text x="18.00" y="166.30" fill="#c0caf5" xml:space="preserve" textLength="450.00" lengthAdjust="spacingAndGlyphs">    g  Agent tool history             t  Run tests</text>
-<text x="36.00" y="212.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="126.00" lengthAdjust="spacingAndGlyphs">shell · code .</text>
-<text x="36.00" y="235.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="369.00" lengthAdjust="spacingAndGlyphs">포커스된 페인의 디렉터리를 VS Code로 열기</text>
+<text x="36.00" y="97.30" fill="#7dcfff" font-weight="600" xml:space="preserve" textLength="27.00" lengthAdjust="spacingAndGlyphs">› 1</text>
+<text x="81.00" y="97.30" fill="#7dcfff" font-weight="600" xml:space="preserve" textLength="135.00" lengthAdjust="spacingAndGlyphs">Open in VS Code</text>
+<text x="360.00" y="97.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="387.00" y="97.30" fill="#c0caf5" xml:space="preserve" textLength="198.00" lengthAdjust="spacingAndGlyphs">Reinstall dependencies</text>
+<text x="666.00" y="97.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">i</text>
+<text x="693.00" y="97.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="97.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">r</text>
+<text x="999.00" y="97.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="54.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">2</text>
+<text x="81.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="171.00" lengthAdjust="spacingAndGlyphs">Open repo on GitHub</text>
+<text x="360.00" y="120.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">a</text>
+<text x="387.00" y="120.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="666.00" y="120.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">j</text>
+<text x="693.00" y="120.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">s</text>
+<text x="999.00" y="120.30" fill="#c0caf5" xml:space="preserve" textLength="90.00" lengthAdjust="spacingAndGlyphs">git status</text>
+<text x="54.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">3</text>
+<text x="81.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="153.00" lengthAdjust="spacingAndGlyphs">Open pull request</text>
+<text x="360.00" y="143.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">b</text>
+<text x="387.00" y="143.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="666.00" y="143.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">k</text>
+<text x="693.00" y="143.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">t</text>
+<text x="999.00" y="143.30" fill="#c0caf5" xml:space="preserve" textLength="81.00" lengthAdjust="spacingAndGlyphs">Run tests</text>
+<text x="54.00" y="166.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">4</text>
+<text x="81.00" y="166.30" fill="#c0caf5" xml:space="preserve" textLength="99.00" lengthAdjust="spacingAndGlyphs">브랜치 정리</text>
+<text x="360.00" y="166.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">c</text>
+<text x="387.00" y="166.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="666.00" y="166.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">l</text>
+<text x="693.00" y="166.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="166.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">u</text>
+<text x="999.00" y="166.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="54.00" y="189.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">5</text>
+<text x="81.00" y="189.30" fill="#c0caf5" xml:space="preserve" textLength="162.00" lengthAdjust="spacingAndGlyphs">Lazygit in a split</text>
+<text x="360.00" y="189.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">d</text>
+<text x="387.00" y="189.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="666.00" y="189.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">m</text>
+<text x="693.00" y="189.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="189.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">v</text>
+<text x="999.00" y="189.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="54.00" y="212.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">6</text>
+<text x="81.00" y="212.30" fill="#c0caf5" xml:space="preserve" textLength="81.00" lengthAdjust="spacingAndGlyphs">서버 로그</text>
+<text x="360.00" y="212.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">e</text>
+<text x="387.00" y="212.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="666.00" y="212.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">n</text>
+<text x="693.00" y="212.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="212.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">w</text>
+<text x="999.00" y="212.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="54.00" y="235.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">7</text>
+<text x="81.00" y="235.30" fill="#c0caf5" xml:space="preserve" textLength="117.00" lengthAdjust="spacingAndGlyphs">워크트리 목록</text>
+<text x="360.00" y="235.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">f</text>
+<text x="387.00" y="235.30" fill="#c0caf5" xml:space="preserve" textLength="117.00" lengthAdjust="spacingAndGlyphs">File explorer</text>
+<text x="666.00" y="235.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">o</text>
+<text x="693.00" y="235.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="235.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">x</text>
+<text x="999.00" y="235.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="54.00" y="258.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">8</text>
+<text x="81.00" y="258.30" fill="#c0caf5" xml:space="preserve" textLength="171.00" lengthAdjust="spacingAndGlyphs">Reload herdr config</text>
+<text x="360.00" y="258.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">g</text>
+<text x="387.00" y="258.30" fill="#c0caf5" xml:space="preserve" textLength="162.00" lengthAdjust="spacingAndGlyphs">Agent tool history</text>
+<text x="666.00" y="258.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">p</text>
+<text x="693.00" y="258.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="258.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">y</text>
+<text x="999.00" y="258.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="54.00" y="281.30" fill="#c0caf5" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">9</text>
+<text x="81.00" y="281.30" fill="#c0caf5" xml:space="preserve" textLength="126.00" lengthAdjust="spacingAndGlyphs">Open changelog</text>
+<text x="360.00" y="281.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">h</text>
+<text x="387.00" y="281.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="666.00" y="281.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">q</text>
+<text x="693.00" y="281.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="972.00" y="281.30" fill="#414868" xml:space="preserve" textLength="9.00" lengthAdjust="spacingAndGlyphs">z</text>
+<text x="999.00" y="281.30" fill="#414868" xml:space="preserve" textLength="63.00" lengthAdjust="spacingAndGlyphs">(empty)</text>
+<text x="36.00" y="327.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="126.00" lengthAdjust="spacingAndGlyphs">shell · code .</text>
+<text x="36.00" y="350.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="369.00" lengthAdjust="spacingAndGlyphs">포커스된 페인의 디렉터리를 VS Code로 열기</text>
 <text x="36.00" y="396.30" fill="#c0caf5" opacity="0.55" xml:space="preserve" textLength="1188.00" lengthAdjust="spacingAndGlyphs">↑↓←→ move · enter run · slot key runs · shift+a add · shift+e edit · shift+d delete · shift+o edit file · shift+i import · esc close</text>
 </svg>
