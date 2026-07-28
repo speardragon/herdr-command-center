@@ -49,13 +49,30 @@ export function wrap(value, width) {
   const lines = [];
   let line = '';
   let used = 0;
+  // Break at the last space that fits rather than mid-word: a footer that reads
+  // "shift+i im / port" looks like a rendering bug, and every string wrapped here
+  // is prose meant for a human.
+  let breakAt = -1;
+  let widthAtBreak = 0;
   for (const character of text) {
     const characterWidth = cellWidth(character);
     if (characterWidth > width) continue;
     if (used > 0 && used + characterWidth > width) {
-      lines.push(line);
-      line = '';
-      used = 0;
+      if (breakAt > 0) {
+        lines.push(line.slice(0, breakAt));
+        line = line.slice(breakAt + 1);
+        used -= widthAtBreak + 1;
+      } else {
+        lines.push(line);
+        line = '';
+        used = 0;
+      }
+      breakAt = -1;
+      widthAtBreak = 0;
+    }
+    if (character === ' ' && used > 0) {
+      breakAt = line.length;
+      widthAtBreak = used;
     }
     line += character;
     used += characterWidth;
