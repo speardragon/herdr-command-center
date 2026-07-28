@@ -10,10 +10,10 @@ const MAX_ROWS = 100;
 const PADDING_X = 2;
 const PADDING_Y = 1;
 
-const LIST_FOOTER = '↑↓←→ move · enter run · slot key runs · A add · E edit · D delete · O edit file · I import · esc close';
+const LIST_FOOTER = '↑↓←→ move · enter run · slot key runs · shift+a add · shift+e edit · shift+d delete · shift+o edit file · shift+i import · esc close';
 const FORM_FOOTER = 'type to edit · tab/↑↓ field · ←→ change · enter save · esc cancel';
 const CONFIRM_FOOTER = 'y delete · any other key cancels';
-const ERROR_FOOTER = 'O edit file · esc close';
+const ERROR_FOOTER = 'shift+o edit file · esc close';
 const EDITOR_FOOTER = '↑↓ move · enter open · 1-9 open · esc cancel';
 const IMPORT_FOOTER = '↑↓ move · enter set up · esc cancel';
 
@@ -75,7 +75,7 @@ function listBody(view, width, budget, color) {
   const header = clipLine(`Command Center · ${count} command${count === 1 ? '' : 's'}`, width);
   const lines = [color ? styles.bold(header) : header, ''];
   if (count === 0) {
-    lines.push(...wrap('Press A to add one, I to import from your herdr config, or O to open commands.toml.', width));
+    lines.push(...wrap('Press shift+a to add one, shift+i to import from your herdr config, or shift+o to open commands.toml.', width));
     return lines;
   }
   const columns = columnsForWidth(width);

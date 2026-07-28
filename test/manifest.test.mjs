@@ -100,7 +100,7 @@ test('both READMEs document every config field and the migration', async () => {
 test('both READMEs document the uppercase action keys', async () => {
   for (const name of ['README.md', 'README.ko.md']) {
     const text = await readFile(new URL(`../${name}`, import.meta.url), 'utf8');
-    for (const key of ['`A`', '`E`', '`D`', '`O`', '`I`']) {
+    for (const key of ['`shift+a`', '`shift+e`', '`shift+d`', '`shift+o`', '`shift+i`']) {
       assert.ok(text.includes(key), `${name} does not document the ${key} action`);
     }
     assert.ok(!text.includes('1-9 run'), `${name} still describes the old numeric badges`);

@@ -72,11 +72,11 @@ herdr server reload-config
 | `↑` `↓` `←` `→` | move through the grid | previous / next field |
 | `Tab` / `Shift-Tab` | — | next / previous field |
 | `Enter` | run the highlighted command | save |
-| `A` | add a command | — |
-| `E` | edit the highlighted command | — |
-| `D` then `y` | delete the highlighted command | — |
-| `O` | open `commands.toml` in your editor | — |
-| `I` | import from your herdr config | — |
+| `shift+a` | add a command | — |
+| `shift+e` | edit the highlighted command | — |
+| `shift+d` then `y` | delete the highlighted command | — |
+| `shift+o` | open `commands.toml` in your editor | — |
+| `shift+i` | import from your herdr config | — |
 | `Space` | — | change `Slot`, `Type` or `Cwd` |
 | `Backspace` | — | delete the last character |
 | `Esc` | close the popup | discard and go back |
@@ -89,7 +89,7 @@ reordered — `d` runs whatever lives in slot `d`. All 36 slots are usable.
 Two things follow from that. `j` and `k` are slots now, so moving around is
 arrow keys only. `q` is a slot now, so `Esc` is how you close the popup.
 
-Press `A` to add one without leaving the popup. `Tab` moves between fields,
+Press `shift+a` to add one without leaving the popup. `Tab` moves between fields,
 `←`/`→` cycle `Slot`, `Type` and `Cwd`, and `Enter` writes it to `commands.toml`.
 
 A blinking caret marks the field you are typing into, so there is nothing to
@@ -106,7 +106,7 @@ nothing.
 > `commands.json.bak`. Nothing is deleted.
 
 Everything the popup edits lives in one TOML file you are meant to edit by hand
-too. Press `O` in the popup, or run the action directly:
+too. Press `shift+o` in the popup, or run the action directly:
 
 ```bash
 herdr plugin action invoke edit-config --plugin cdragon.command-center
@@ -182,7 +182,7 @@ That is three candidates, the first of which passes a flag.
 > because that block is rewritten.
 >
 > A malformed file opens the popup in an error mode that names the problem and
-> still lets you press `O` to go fix it; it is never overwritten.
+> still lets you press `shift+o` to go fix it; it is never overwritten.
 
 ![The popup showing a TOML parse error with the line number](docs/popup-error.png)
 
@@ -200,7 +200,7 @@ get a notification saying so rather than a prompt you did not mean to send.
 
 ### Importing what you already have
 
-Press `I` and Command Center reads the `[[keys.command]]` entries out of your
+Press `shift+i` and Command Center reads the `[[keys.command]]` entries out of your
 `~/.config/herdr/config.toml` — the prefix keybindings this plugin exists to
 replace — and offers them. Choosing one opens the add form prefilled, so you still
 choose the slot and can fix the label before it is written. Entries you have

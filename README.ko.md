@@ -69,11 +69,11 @@ herdr server reload-config
 | `↑` `↓` `←` `→` | 그리드 안에서 이동 | 이전 / 다음 필드 |
 | `Tab` / `Shift-Tab` | — | 다음 / 이전 필드 |
 | `Enter` | 선택한 커맨드 실행 | 저장 |
-| `A` | 커맨드 추가 | — |
-| `E` | 선택한 커맨드 수정 | — |
-| `D` 다음 `y` | 선택한 커맨드 삭제 | — |
-| `O` | `commands.toml`을 에디터로 열기 | — |
-| `I` | herdr 설정에서 가져오기 | — |
+| `shift+a` | 커맨드 추가 | — |
+| `shift+e` | 선택한 커맨드 수정 | — |
+| `shift+d` 다음 `y` | 선택한 커맨드 삭제 | — |
+| `shift+o` | `commands.toml`을 에디터로 열기 | — |
+| `shift+i` | herdr 설정에서 가져오기 | — |
 | `Space` | — | `Slot`·`Type`·`Cwd` 값 변경 |
 | `Backspace` | — | 마지막 글자 삭제 |
 | `Esc` | 팝업 닫기 | 취소하고 목록으로 |
@@ -86,7 +86,7 @@ herdr server reload-config
 여기서 두 가지가 따라옵니다. `j`·`k`가 슬롯이 되었으니 이동은 방향키로만 하고,
 `q`가 슬롯이 되었으니 팝업은 `Esc`로 닫습니다.
 
-팝업을 벗어나지 않고 `A`로 바로 추가할 수 있습니다. `Tab`으로 필드를 옮기고,
+팝업을 벗어나지 않고 `shift+a`로 바로 추가할 수 있습니다. `Tab`으로 필드를 옮기고,
 `←`/`→`로 `Slot`·`Type`·`Cwd`를 바꾸고, `Enter`를 누르면 `commands.toml`에 기록됩니다.
 
 깜빡이는 커서가 지금 타이핑되는 필드를 알려주므로 짐작할 필요가 없습니다 — 그냥
@@ -101,7 +101,7 @@ herdr server reload-config
 > 변환하고 원본은 `commands.json.bak`으로 이름만 바꿔 둡니다. 삭제하지 않습니다.
 
 팝업이 편집하는 내용은 전부 TOML 파일 하나에 들어 있고, 이 파일은 직접 손으로
-고치는 것도 전제로 하고 있습니다. 팝업에서 `O`를 누르거나, 액션을 직접 실행하세요:
+고치는 것도 전제로 하고 있습니다. 팝업에서 `shift+o`를 누르거나, 액션을 직접 실행하세요:
 
 ```bash
 herdr plugin action invoke edit-config --plugin cdragon.command-center
@@ -174,7 +174,7 @@ editor = ["code --new-window", "nvim", "vim"]
 > 팝업에서 수정한 블록 *안쪽*의 주석은 그 블록이 다시 쓰이므로 사라집니다.
 >
 > 형식이 깨진 파일은 무엇이 문제인지 알려주는 에러 화면으로 열리고, 그 화면에서도
-> `O`로 고치러 갈 수 있습니다. 깨진 파일을 덮어쓰지는 않습니다.
+> `shift+o`로 고치러 갈 수 있습니다. 깨진 파일을 덮어쓰지는 않습니다.
 
 ![TOML 파싱 오류를 줄 번호와 함께 보여주는 팝업](docs/popup-error.png)
 
@@ -192,7 +192,7 @@ editor = ["code --new-window", "nvim", "vim"]
 
 ### 이미 갖고 있는 설정 가져오기
 
-`I`를 누르면 Command Center가 `~/.config/herdr/config.toml`의 `[[keys.command]]`
+`shift+i`를 누르면 Command Center가 `~/.config/herdr/config.toml`의 `[[keys.command]]`
 항목 — 이 플러그인이 대체하려는 그 prefix 키바인딩들 — 을 읽어서 보여줍니다. 하나를
 고르면 추가 폼이 미리 채워진 채로 열리므로, 슬롯은 직접 고르고 저장 전에 label도
 고칠 수 있습니다. 이미 추가된 항목은 표시되고, herdr 타입에 대응하는 게 없는 항목은

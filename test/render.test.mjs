@@ -90,11 +90,14 @@ test('the list shows the selected command type, command, and description', () =>
   assert.match(plugin, /plugin_action · ray\.file-explorer\.open/u);
 });
 
-test('the list footer advertises the uppercase actions', () => {
+test('the list footer spells the action keys out as shift+key', () => {
   // Wide enough that the footer does not wrap, since a wrapped line would
   // split a fragment like "O edit file" across two lines.
-  const text = renderView(createView({ doc: doc() }), { columns: 120, rows: 24 });
-  for (const fragment of ['enter run', 'slot key runs', 'A add', 'E edit', 'D delete', 'O edit file', 'I import', 'esc close']) {
+  // Flattened, because the footer legitimately wraps on a narrow popup and the
+  // claim here is that it advertises these keys, not that it fits on one line.
+  const text = renderView(createView({ doc: doc() }), { columns: 120, rows: 24 })
+    .replace(/\s+/gu, ' ');
+  for (const fragment of ['enter run', 'slot key runs', 'shift+a add', 'shift+e edit', 'shift+d delete', 'shift+o edit file', 'shift+i import', 'esc close']) {
     assert.ok(text.includes(fragment), `footer is missing "${fragment}"`);
   }
   assert.ok(!text.includes('1-9 run'), 'slots are no longer a numeric range');
@@ -112,7 +115,7 @@ test('an empty list explains how to add a command', () => {
   // Wide enough that the sentence does not wrap mid-word.
   const text = renderView(createView({ doc: doc([]) }), { columns: 120, rows: 24 });
   assert.match(text, /Command Center · 0 commands/u);
-  assert.match(text, /Press A to add one/u);
+  assert.match(text, /Press shift\+a to add one/u);
   assert.match(text, /commands\.toml/u);
 });
 
@@ -171,7 +174,7 @@ test('error mode shows the config error and only its own keys', () => {
   const text = renderView(view, SIZE);
   assert.match(text, /Command Center · config error/u);
   assert.match(text, /commands\.toml is not valid JSON/u);
-  assert.match(text, /O edit file/u);
+  assert.match(text, /shift\+o edit file/u);
   assert.ok(!text.includes('a add'));
 });
 
