@@ -32,14 +32,25 @@ function freeSlots(doc, keepSlot = null) {
   return [...SLOT_KEYS].filter((slot) => !taken.has(slot));
 }
 
-function emptyForm(doc) {
+// The list cursor addresses a slot, not a command: every slot is a cell in the
+// grid, whether or not anything is registered in it.
+export function slotAt(cursor) {
+  return SLOT_KEYS[clampCursor(cursor, SLOT_KEYS.length)];
+}
+
+export function commandInSlot(doc, slot) {
+  return (doc?.commands ?? []).find((command) => command.slot === slot) ?? null;
+}
+
+function emptyForm(doc, preferredSlot = null) {
   const available = freeSlots(doc);
+  const slot = available.includes(preferredSlot) ? preferredSlot : available[0] ?? '';
   return {
     commandId: null,
     fieldIndex: 0,
     slotChoices: available,
     fields: {
-      label: '', slot: available[0] ?? '', type: 'shell', command: '', cwd: 'focused', description: '',
+      label: '', slot, type: 'shell', command: '', cwd: 'focused', description: '',
     },
   };
 }
@@ -69,7 +80,7 @@ export function createView({ doc, error = null, cursor = 0 } = {}) {
     doc,
     error: error ?? null,
     formError: null,
-    cursor: clampCursor(cursor, doc.commands?.length ?? 0),
+    cursor: clampCursor(cursor, SLOT_KEYS.length),
     form: null,
     importEntries: [],
     importCursor: 0,
@@ -165,25 +176,23 @@ function reduceError(view, key) {
   return view;
 }
 
+// Every column count the grid supports divides the slot count evenly, so the grid
+// is always a full rectangle and a cell always has a neighbour in every direction.
+export function gridRows(columns) {
+  return Math.ceil(SLOT_KEYS.length / Math.max(1, columns));
+}
+
 function moveCursor(view, key, columns) {
-  const total = view.doc.commands?.length ?? 0;
-  if (total === 0) return view;
-  const span = Math.max(1, columns);
-  if (key === 'left') return { ...view, cursor: step(view.cursor, -1, total) };
-  if (key === 'right') return { ...view, cursor: step(view.cursor, 1, total) };
-  if (span === 1) {
-    // A single column is the old linear list, and its ↑/↓ wrapped end-to-end;
-    // columns defaulting to 1 has to reproduce that exactly.
-    return { ...view, cursor: step(view.cursor, key === 'up' ? -1 : 1, total) };
-  }
-  // A real grid clamps instead of wrapping: a partial last row would otherwise
-  // send the cursor wrapping to some unrelated cell the user cannot predict.
-  const raw = key === 'up' ? view.cursor - span : view.cursor + span;
-  return { ...view, cursor: Math.max(0, Math.min(total - 1, raw)) };
+  const total = SLOT_KEYS.length;
+  // The grid fills top to bottom, so ↑/↓ walk the slot order itself and ←/→ step
+  // a whole column, landing on the same row of the neighbouring column.
+  if (key === 'up') return { ...view, cursor: step(view.cursor, -1, total) };
+  if (key === 'down') return { ...view, cursor: step(view.cursor, 1, total) };
+  const rows = gridRows(columns);
+  return { ...view, cursor: step(view.cursor, key === 'left' ? -rows : rows, total) };
 }
 
 function reduceList(view, key, columns) {
-  const commands = view.doc.commands ?? [];
   if (key === 'escape') return { ...view, effect: { type: 'close' } };
   if (key === 'A') return { ...view, mode: 'form', formError: null, form: emptyForm(view.doc) };
   if (key === 'O') return { ...view, effect: { type: 'open-config' } };
@@ -192,7 +201,8 @@ function reduceList(view, key, columns) {
     return moveCursor(view, key, columns);
   }
 
-  const selected = commands[view.cursor] ?? null;
+  const slot = slotAt(view.cursor);
+  const selected = commandInSlot(view.doc, slot);
   if (key === 'E') {
     if (!selected) return view;
     return { ...view, mode: 'form', formError: null, form: formFor(selected, view.doc) };
@@ -202,23 +212,26 @@ function reduceList(view, key, columns) {
     return { ...view, mode: 'confirm-delete' };
   }
   if (key === 'enter') {
-    if (!selected) return view;
+    // An empty cell is an offer, not a dead end: enter fills the slot it sits on.
+    if (!selected) return { ...view, mode: 'form', formError: null, form: emptyForm(view.doc, slot) };
     return { ...view, effect: { type: 'run', command: selected } };
   }
   // A slot key runs its command wherever it sits in the grid.
   if (typeof key === 'string' && key.length === 1 && SLOT_KEYS.includes(key)) {
-    const index = commands.findIndex((command) => command.slot === key);
-    if (index < 0) return view;
-    return { ...view, cursor: index, effect: { type: 'run', command: commands[index] } };
+    const command = commandInSlot(view.doc, key);
+    if (!command) return view;
+    return { ...view, cursor: SLOT_KEYS.indexOf(key), effect: { type: 'run', command } };
   }
   return view;
 }
 
 function reduceConfirm(view, key) {
   if (key !== 'y') return { ...view, mode: 'list' };
-  const commands = (view.doc.commands ?? []).filter((unused, index) => index !== view.cursor);
+  const slot = slotAt(view.cursor);
+  const commands = (view.doc.commands ?? []).filter((command) => command.slot !== slot);
   const doc = { ...view.doc, commands };
-  const cursor = clampCursor(view.cursor, commands.length);
+  // The cursor stays put: the slot is still there, it is just empty now.
+  const cursor = view.cursor;
   return { ...view, mode: 'list', doc, cursor, effect: { type: 'save', doc, cursor } };
 }
 
@@ -267,7 +280,8 @@ function submitForm(view) {
     ? commands.map((entry, position) => (position === index ? command : entry))
     : [...commands, command];
   const doc = { ...view.doc, commands: nextCommands };
-  const cursor = index >= 0 ? index : nextCommands.length - 1;
+  // The cursor follows the command to whichever slot it now claims.
+  const cursor = SLOT_KEYS.indexOf(command.slot);
   return {
     ...view,
     mode: 'list',

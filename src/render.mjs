@@ -1,5 +1,6 @@
+import { SLOT_KEYS } from './schema.mjs';
 import { clipLine, displayWidth, wrap } from './text.mjs';
-import { CHOICE_FIELDS, FORM_FIELDS } from './view.mjs';
+import { CHOICE_FIELDS, commandInSlot, FORM_FIELDS, gridRows } from './view.mjs';
 
 // Matches the popup size declared in herdr-plugin.toml, used when a caller has
 // no TTY dimensions to offer.
@@ -33,6 +34,14 @@ const RESET = '\u001b[0m';
 const styles = {
   bold: (text) => `\u001b[1m${text}${RESET}`,
   dim: (text) => `\u001b[2m${text}${RESET}`,
+  // Thirty-three empty cells against a handful of real commands is a lot of
+  // scaffolding, so they are pushed toward the background rather than dimmed:
+  // dim darkens, which recedes on a dark terminal but stands out on a light one.
+  // Bright-black and bright-white rather than fixed grays: the theme author has
+  // already placed those just off their own background, whereas a hardcoded
+  // gray is at the mercy of a background this code cannot see.
+  faintOnDark: (text) => `\u001b[90m${text}${RESET}`,
+  faintOnLight: (text) => `\u001b[97m${text}${RESET}`,
   cyan: (text) => `\u001b[36m${text}${RESET}`,
   yellow: (text) => `\u001b[33m${text}${RESET}`,
 };
@@ -61,15 +70,27 @@ export function gridColumns(view, size = {}) {
   return columnsForWidth(Math.max(1, outerWidth - PADDING_X * 2));
 }
 
-function cell(view, command, index, cellWidth, color) {
-  const marker = index === view.cursor ? '›' : ' ';
-  const text = clipLine(`${marker} ${command.slot}  ${command.label}`, cellWidth);
-  const padded = text + ' '.repeat(Math.max(0, cellWidth - displayWidth(text)));
-  if (!color) return padded;
-  return index === view.cursor ? styles.bold(styles.cyan(padded)) : padded;
+const EMPTY_LABEL = '(empty)';
+
+// One grid row, built left to right. The last cell is left unpadded so that a
+// styled empty cell cannot smuggle trailing spaces past the plain-text layout.
+function gridRow(view, indices, cellWidth, color, faint) {
+  return indices.map((index, position) => {
+    const slot = SLOT_KEYS[index];
+    const command = commandInSlot(view.doc, slot);
+    const marker = index === view.cursor ? '›' : ' ';
+    const text = clipLine(`${marker} ${slot}  ${command ? command.label : EMPTY_LABEL}`, cellWidth);
+    const padded = position === indices.length - 1
+      ? text
+      : text + ' '.repeat(Math.max(0, cellWidth - displayWidth(text)));
+    if (!color) return padded;
+    if (index === view.cursor) return styles.bold(styles.cyan(padded));
+    return command ? padded : faint(padded);
+  }).join('');
 }
 
-function listBody(view, width, budget, color) {
+function listBody(view, width, budget, color, light) {
+  const faint = light ? styles.faintOnLight : styles.faintOnDark;
   const commands = view.doc.commands ?? [];
   const count = commands.length;
   const header = clipLine(`Command Center · ${count} command${count === 1 ? '' : 's'}`, width);
@@ -78,26 +99,40 @@ function listBody(view, width, budget, color) {
     lines.push(...wrap('Press shift+a to add one, shift+i to import from your herdr config, or shift+o to open commands.toml.', width));
     return lines;
   }
+  const total = SLOT_KEYS.length;
   const columns = columnsForWidth(width);
   const cellWidth = Math.floor(width / columns);
-  const selected = commands[Math.max(0, Math.min(count - 1, view.cursor))];
-  const detail = [
-    clipLine(`${selected.type} · ${selected.command}`, width),
-    ...(selected.description.length > 0 ? [clipLine(selected.description, width)] : []),
-  ];
-  const rowBudget = Math.max(1, budget - lines.length - 1 - detail.length);
-  const rows = Math.ceil(count / columns);
+  const rows = gridRows(columns);
+  const cursor = Math.max(0, Math.min(total - 1, view.cursor));
+  const selected = commandInSlot(view.doc, SLOT_KEYS[cursor]);
+  const detail = selected
+    ? [
+      clipLine(`${selected.type} · ${selected.command}`, width),
+      ...(selected.description.length > 0 ? [clipLine(selected.description, width)] : []),
+    ]
+    : [clipLine(`slot ${SLOT_KEYS[cursor]} is empty · enter to add a command here`, width)];
+  // One line is always held back for the scroll hint, so the detail block does
+  // not jump a row the moment the grid stops fitting.
+  const rowBudget = Math.max(1, budget - lines.length - 2 - detail.length);
   const shown = Math.min(rows, rowBudget);
-  for (let row = 0; row < shown; row += 1) {
-    const parts = [];
+  // Keep the cursor's row inside the window, centred wherever there is room.
+  const first = Math.max(0, Math.min(cursor % rows - Math.floor((shown - 1) / 2), rows - shown));
+  for (let row = first; row < first + shown; row += 1) {
+    const indices = [];
     for (let column = 0; column < columns; column += 1) {
-      const index = row * columns + column;
-      if (index >= count) break;
-      parts.push(cell(view, commands[index], index, cellWidth, color));
+      const index = column * rows + row;
+      if (index < total) indices.push(index);
     }
-    lines.push(parts.join('').trimEnd());
+    lines.push(gridRow(view, indices, cellWidth, color, faint));
   }
-  if (shown < rows) lines.push(clipLine(`↓ ${count - shown * columns} more`, width));
+  const hidden = [
+    first > 0 ? `↑ ${first * columns} more` : null,
+    first + shown < rows ? `↓ ${(rows - first - shown) * columns} more` : null,
+  ].filter(Boolean);
+  if (hidden.length > 0) {
+    const hint = clipLine(hidden.join(' · '), width);
+    lines.push(color ? styles.dim(hint) : hint);
+  }
   lines.push('');
   lines.push(...(color ? detail.map((line) => styles.dim(line)) : detail));
   return lines;
@@ -127,7 +162,9 @@ function formBody(view, width, budget, color) {
 }
 
 function confirmBody(view, width, budget, color) {
-  const command = (view.doc.commands ?? [])[view.cursor];
+  // By slot, not by position: the cursor addresses the grid, and a command's
+  // place in the array has nothing to do with which cell it is drawn in.
+  const command = commandInSlot(view.doc, SLOT_KEYS[view.cursor]);
   const title = clipLine('Command Center · Delete command', width);
   return [
     color ? styles.bold(title) : title,
@@ -204,11 +241,12 @@ export function renderLines(view, size = {}) {
   const width = Math.max(1, outerWidth - PADDING_X * 2);
   const height = Math.max(1, outerHeight - PADDING_Y * 2);
   const color = size?.color === true;
+  const light = size?.light === true;
 
   const footerLines = wrap(FOOTERS[view.mode] ?? LIST_FOOTER, width);
   const footer = color ? footerLines.map((line) => styles.dim(line)) : footerLines;
   const bodyBudget = Math.max(1, height - footer.length);
-  const body = (BODIES[view.mode] ?? listBody)(view, width, bodyBudget, color).slice(0, bodyBudget);
+  const body = (BODIES[view.mode] ?? listBody)(view, width, bodyBudget, color, light).slice(0, bodyBudget);
   const fill = Array.from({ length: Math.max(0, bodyBudget - body.length) }, () => '');
 
   const indent = ' '.repeat(PADDING_X);

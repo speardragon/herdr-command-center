@@ -36,8 +36,10 @@ test('createView starts in list mode with the cursor clamped', () => {
   assert.equal(view.cursor, 0);
   assert.equal(view.form, null);
   assert.equal(view.effect, null);
-  assert.equal(createView({ doc: doc(), cursor: 99 }).cursor, 2);
-  assert.equal(createView({ doc: doc([]) , cursor: 5 }).cursor, 0);
+  // The cursor addresses a slot, so it is bounded by the slot list, not by how
+  // many commands happen to be registered.
+  assert.equal(createView({ doc: doc(), cursor: 99 }).cursor, SLOT_KEYS.length - 1);
+  assert.equal(createView({ doc: doc([]), cursor: 5 }).cursor, 5);
 });
 
 test('createView with an error starts in error mode', () => {
@@ -54,8 +56,7 @@ test('arrow keys move the cursor and wrap', () => {
   const view = createView({ doc: doc() });
   assert.equal(press(view, 'down').cursor, 1);
   assert.equal(press(view, 'down', 'down').cursor, 2);
-  assert.equal(press(view, 'down', 'down', 'down').cursor, 0);
-  assert.equal(press(view, 'up').cursor, 2);
+  assert.equal(press(view, 'up').cursor, SLOT_KEYS.length - 1);
 });
 
 test('moving the cursor never emits an effect', () => {
@@ -85,7 +86,7 @@ test('digits beyond the list are ignored', () => {
 test('digits address absolute positions even when the list has scrolled', () => {
   const labels = Array.from({ length: 20 }, (unused, index) => `cmd-${index}`);
   const view = press(createView({ doc: doc(labels) }), 'up');
-  assert.equal(view.cursor, 19);
+  assert.equal(view.cursor, SLOT_KEYS.length - 1);
   const pressed = reduceKey(view, '1');
   assert.equal(pressed.cursor, 0);
   assert.equal(pressed.effect.command.label, 'cmd-0');
@@ -105,6 +106,7 @@ test('O asks to open the config file', () => {
 test('an empty list still closes and still opens the config', () => {
   const view = createView({ doc: doc([]) });
   assert.deepEqual(reduceKey(view, 'enter').effect, null);
+  assert.equal(reduceKey(view, 'enter').mode, 'form', 'enter offers to fill the empty slot');
   assert.deepEqual(reduceKey(view, 'E').effect, null);
   assert.equal(reduceKey(view, 'E').mode, 'list');
   assert.deepEqual(reduceKey(view, 'D').effect, null);
@@ -274,10 +276,10 @@ test('d then y removes the command and asks for a save', () => {
   assert.deepEqual(deleted.effect, { type: 'save', doc: deleted.doc, cursor: 1 });
 });
 
-test('deleting the last row clamps the cursor', () => {
-  const deleted = press(createView({ doc: doc() }), 'up', 'D', 'y');
-  assert.equal(deleted.cursor, 1);
-  assert.equal(deleted.doc.commands.length, 2);
+test('deleting leaves the cursor on the slot it emptied', () => {
+  const deleted = press(createView({ doc: doc() }), 'down', 'down', 'D', 'y');
+  assert.equal(deleted.cursor, 2);
+  assert.deepEqual(deleted.doc.commands.map((command) => command.label), ['One', 'Two']);
 });
 
 test('deleting the only command leaves an empty list at cursor zero', () => {
@@ -383,26 +385,40 @@ test('escape and interrupt still close, but q does not', () => {
 });
 
 test('arrow keys walk the grid using the column count given', () => {
-  const labels = Array.from({ length: 7 }, (unused, index) => `c${index}`);
-  const view = createView({ doc: doc(labels) });
-  const grid = { columns: 3 };
-  assert.equal(reduceKey(view, 'right', grid).cursor, 1);
-  assert.equal(reduceKey(view, 'down', grid).cursor, 3);
-  assert.equal(reduceKey(reduceKey(view, 'down', grid), 'up', grid).cursor, 0);
-  assert.equal(reduceKey(view, 'left', grid).cursor, 6, 'wraps to the last cell');
+  const view = createView({ doc: doc() });
+  const grid = { columns: 3 }; // 36 slots over 3 columns is 12 rows
+  assert.equal(reduceKey(view, 'down', grid).cursor, 1, 'down walks the column');
+  assert.equal(reduceKey(view, 'right', grid).cursor, 12, 'right steps a whole column');
+  assert.equal(reduceKey(reduceKey(view, 'right', grid), 'left', grid).cursor, 0);
+  assert.equal(reduceKey(view, 'left', grid).cursor, 24, 'wraps to the last column, same row');
 });
 
-test('vertical movement clamps rather than skipping past the end', () => {
-  const labels = Array.from({ length: 7 }, (unused, index) => `c${index}`);
-  const view = createView({ doc: doc(labels), cursor: 5 });
-  // row 1, column 2; one row down would be index 8, which does not exist
-  assert.equal(reduceKey(view, 'down', { columns: 3 }).cursor, 6);
+test('the bottom of a column continues into the top of the next', () => {
+  const grid = { columns: 3 };
+  assert.equal(reduceKey(createView({ doc: doc(), cursor: 11 }), 'down', grid).cursor, 12);
+  assert.equal(reduceKey(createView({ doc: doc(), cursor: 35 }), 'down', grid).cursor, 0);
 });
 
 test('without a column count the arrows behave linearly', () => {
   const view = createView({ doc: doc() });
   assert.equal(reduceKey(view, 'down').cursor, 1);
-  assert.equal(reduceKey(view, 'up').cursor, 2);
+  assert.equal(reduceKey(view, 'up').cursor, SLOT_KEYS.length - 1);
+});
+
+test('enter on an empty slot opens an add form aimed at that slot', () => {
+  const view = press(createView({ doc: doc() }), 'down', 'down', 'down');
+  const form = reduceKey(view, 'enter');
+  assert.equal(form.mode, 'form');
+  assert.equal(form.form.commandId, null, 'it is an add, not an edit');
+  assert.equal(form.form.fields.slot, '4', 'the slot the cursor was sitting on');
+  assert.equal(form.effect, null, 'nothing is written until the form is saved');
+});
+
+test('an empty slot offers nothing to run, edit, or delete', () => {
+  const view = press(createView({ doc: doc() }), 'down', 'down', 'down');
+  assert.equal(reduceKey(view, 'E').mode, 'list');
+  assert.equal(reduceKey(view, 'D').mode, 'list');
+  assert.equal(reduceKey(view, '4').effect, null);
 });
 
 test('j and k no longer navigate, because they are slots', () => {

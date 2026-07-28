@@ -24,6 +24,10 @@ function doc(labels = ['Open in VS Code', 'Open repo on GitHub', 'File explorer'
   };
 }
 
+const DIM = `${String.fromCharCode(27)}[2m`;
+const FAINT_DARK = `${String.fromCharCode(27)}[90m`;
+const FAINT_LIGHT = `${String.fromCharCode(27)}[97m`;
+
 function stripAnsi(text) {
   return text.replace(/\u001b\[[0-9;]*m/gu, '');
 }
@@ -103,12 +107,54 @@ test('the list footer spells the action keys out as shift+key', () => {
   assert.ok(!text.includes('1-9 run'), 'slots are no longer a numeric range');
 });
 
-test('a long list hides the rows past the budget and says how many', () => {
-  const labels = Array.from({ length: 40 }, (unused, index) => `cmd-${index}`);
-  const view = createView({ doc: doc(labels), cursor: 20 });
-  const text = renderView(view, SIZE);
-  assert.match(text, /↓ \d+ more/u);
-  assert.match(text, /cmd-0\b/u);
+test('a grid taller than the budget scrolls and says how much is hidden', () => {
+  const top = renderView(createView({ doc: doc() }), SIZE);
+  assert.match(top, /↓ \d+ more/u);
+  assert.ok(!/↑ \d+ more/u.test(top), 'nothing is hidden above the first row');
+  // Deep enough into the first column that the window has to move with it.
+  const deep = renderView(createView({ doc: doc(), cursor: 16 }), SIZE);
+  assert.match(deep, /↑ \d+ more/u);
+  assert.match(deep, /› g {2}\(empty\)/u, 'the cursor row stays inside the window');
+});
+
+test('every slot is shown, and the unclaimed ones read as empty', () => {
+  const text = renderView(createView({ doc: doc() }), { columns: 120, rows: 28 });
+  for (const slot of SLOT_KEYS) {
+    assert.ok(text.includes(` ${slot}  `), `slot ${slot} is not shown`);
+  }
+  assert.equal((text.match(/\(empty\)/gu) ?? []).length, SLOT_KEYS.length - 3);
+});
+
+test('an empty slot is greyed toward the background rather than hidden', () => {
+  const size = { columns: 120, rows: 28, color: true };
+  const colored = renderLines(createView({ doc: doc() }), size);
+  // Slots 1-3 are taken by the fixture, so 4 is the first unclaimed one.
+  const empty = colored.find((entry) => stripAnsi(entry).includes('4  (empty)'));
+  const claimed = colored.find((entry) => stripAnsi(entry).includes('2  Open repo on GitHub'));
+  assert.ok(empty.includes(`${FAINT_DARK}  4  (empty)`), 'the empty cell is the theme\'s bright-black');
+  assert.ok(!claimed.includes(`${FAINT_DARK}  2  Open repo`), 'a claimed slot is left plain');
+});
+
+test('the empty grey inverts on a light terminal', () => {
+  // Dimming would darken the text on a light background, which makes it stand
+  // out rather than recede; the grey has to move toward white instead.
+  const size = { columns: 120, rows: 28, color: true, light: true };
+  const colored = renderLines(createView({ doc: doc() }), size);
+  const empty = colored.find((entry) => stripAnsi(entry).includes('4  (empty)'));
+  assert.ok(empty.includes(`${FAINT_LIGHT}  4  (empty)`), 'the empty cell is the theme\'s bright-white');
+  assert.ok(!empty.includes(FAINT_DARK), 'and not the dark-terminal grey');
+});
+
+test('the light flag changes nothing but the colour', () => {
+  const view = createView({ doc: doc() });
+  const dark = renderLines(view, { columns: 120, rows: 28, color: true });
+  const light = renderLines(view, { columns: 120, rows: 28, color: true, light: true });
+  assert.deepEqual(light.map(stripAnsi), dark.map(stripAnsi));
+});
+
+test('the detail line offers to fill the empty slot under the cursor', () => {
+  const view = reduceKey(createView({ doc: doc() }), 'up');
+  assert.match(renderView(view, { columns: 120, rows: 28 }), /slot z is empty · enter to add a command here/u);
 });
 
 test('an empty list explains how to add a command', () => {
@@ -160,6 +206,21 @@ test('the form footer advertises its keys', () => {
   for (const fragment of ['tab', 'enter save', 'esc cancel']) {
     assert.ok(text.includes(fragment), `form footer is missing "${fragment}"`);
   }
+});
+
+test('the delete confirmation names the command by slot, not by array position', () => {
+  // Slot "c" is the thirteenth cell but the first command in the array, so an
+  // index lookup would name the wrong command — or none at all.
+  const sparse = {
+    schema_version: 1,
+    editor: [],
+    commands: [
+      { id: 'only', slot: 'c', label: 'Deploy', type: 'shell', command: './deploy', cwd: 'focused', description: '' },
+    ],
+  };
+  const view = reduceKey(createView({ doc: sparse, cursor: SLOT_KEYS.indexOf('c') }), 'D');
+  assert.equal(view.mode, 'confirm-delete');
+  assert.match(renderView(view, SIZE), /Delete "Deploy"\?/u);
 });
 
 test('the delete confirmation names the command', () => {
@@ -268,20 +329,19 @@ test('the grid shows every slot key next to its command', () => {
 test('the renderer and the reducer agree on the column count', () => {
   // If these two ever disagreed, arrow keys would move the cursor somewhere other
   // than where the grid draws it.
-  const labels = Array.from({ length: 8 }, (unused, index) => `cmd-${index}`);
-  const view = createView({ doc: doc(labels) });
+  const view = createView({ doc: doc() });
   for (const size of [{ columns: 40, rows: 24 }, { columns: 80, rows: 24 }, { columns: 200, rows: 24 }]) {
     const columns = gridColumns(view, size);
-    const lines = renderLines(view, size);
-    const firstRow = lines.find((line) => line.includes('cmd-0'));
-    const onFirstRow = labels.filter((label) => firstRow.includes(label)).length;
-    assert.equal(onFirstRow, Math.min(columns, labels.length), `at ${size.columns} columns`);
+    const slot = SLOT_KEYS[reduceKey(view, 'right', { columns }).cursor];
+    const firstRow = renderLines(view, size).find((line) => line.includes('› 1  '));
+    assert.ok(firstRow.includes(` ${slot}  `), `right leaves the drawn row at ${size.columns} columns`);
   }
 });
 
-test('the grid lays commands out across columns, not down one', () => {
+test('the grid lays the slots out down a column, not across', () => {
   const labels = Array.from({ length: 6 }, (unused, index) => `cmd-${index}`);
-  const lines = renderLines(createView({ doc: doc(labels) }), { columns: 120, rows: 24 });
+  const lines = renderLines(createView({ doc: doc(labels) }), { columns: 120, rows: 28 });
   const row = lines.find((line) => line.includes('cmd-0'));
-  assert.ok(row.includes('cmd-1'), 'the second command shares the first row');
+  assert.ok(!row.includes('cmd-1'), 'the second slot is on the next row down');
+  assert.ok(lines.some((line) => line.includes('cmd-1')), 'and it is still drawn');
 });

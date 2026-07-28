@@ -10,6 +10,7 @@ import { realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
+import { isLightTerminal } from '../src/appearance.mjs';
 import { readContext } from '../src/context.mjs';
 import { resolveEditors } from '../src/editor.mjs';
 import { herdrConfigPath, readImportable } from '../src/herdr-config.mjs';
@@ -44,11 +45,12 @@ function diagnostic(stderr, message) {
   }
 }
 
-function screenSize(stdout, color) {
+function screenSize(stdout, color, light) {
   return {
     columns: Number.isFinite(stdout.columns) ? stdout.columns : 78,
     rows: Number.isFinite(stdout.rows) ? stdout.rows : 24,
     color,
+    light,
   };
 }
 
@@ -78,6 +80,7 @@ export async function runPopup({
   const logFile = runLogPath(resolveStateDir(configDir, env));
   const context = readContext(env);
   const useColor = !env.NO_COLOR && env.TERM !== 'dumb';
+  const light = isLightTerminal(env);
 
   let view;
   let raw = null;
@@ -111,7 +114,7 @@ export async function runPopup({
   };
   const draw = () => {
     try {
-      const size = screenSize(stdout, useColor);
+      const size = screenSize(stdout, useColor, light);
       const cursor = textCursor(view, size);
       // Hide first so the cursor does not visibly skate across the repaint, then
       // park it on the edit point when a text field has focus.
@@ -172,7 +175,7 @@ export async function runPopup({
     for await (const chunk of stdin) {
       if (stopCode !== null) break;
       for (const key of decoder.push(chunk)) {
-        view = reduceKey(view, key, { columns: gridColumns(view, screenSize(stdout, useColor)) });
+        view = reduceKey(view, key, { columns: gridColumns(view, screenSize(stdout, useColor, light)) });
         const { effect } = view;
         if (!effect) {
           draw();
