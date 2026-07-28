@@ -19,7 +19,12 @@ test('isLightTerminal assumes dark when nothing says otherwise', () => {
   for (const env of [{}, { COLORFGBG: '' }, { COLORFGBG: 'nonsense' }, { COLORFGBG: '15;default' }]) {
     assert.equal(isLightTerminal(env), false, JSON.stringify(env));
   }
-  assert.equal(isLightTerminal(undefined), false);
+  // Not asserted as false: with no argument the default parameter reads the real
+  // process.env, so this would claim the machine running the tests has a dark
+  // terminal. It fails on any light one — including the author's, which reports
+  // COLORFGBG=0;15. What is worth pinning is that omitting the argument reads the
+  // environment at all.
+  assert.equal(isLightTerminal(undefined), isLightTerminal(process.env));
 });
 
 test('a single-field COLORFGBG is not read as a background', () => {
