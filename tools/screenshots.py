@@ -31,7 +31,7 @@ import unicodedata
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 WORK = REPO / 'docs' / '.frames'
-COLS = 120
+COLS = 140
 
 DEMO = """schema_version = 1
 editor = ["code --new-window", "nvim"]
