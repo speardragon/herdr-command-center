@@ -37,6 +37,7 @@ async function harness(keys, { dir, extraEnv = {}, size } = {}) {
       COMMAND_CENTER_CONTEXT_JSON: JSON.stringify(CONTEXT),
       HERDR_BIN_PATH: '/opt/homebrew/bin/herdr',
       TERM: 'xterm-256color',
+      COMMAND_CENTER_ASCII_INPUT: '0',
       ...extraEnv,
     },
     stdin,
@@ -490,4 +491,53 @@ test('I lists the commands in the herdr config and adds the chosen one', async (
   const written = await readFile(file, 'utf8');
   assert.ok(written.includes('command = "lazygit"'), written);
   assert.ok(written.includes('label = "git TUI"'), written);
+});
+
+test('the popup hops to an ASCII input source and posts a restore watchdog', async () => {
+  const { dir } = await scratch();
+  const spawns = [];
+  const oscalls = [];
+  const stdin = createFakeStdin(['\u001b']);
+  const processRef = createFakeProcess(7777);
+  const pending = runPopup({
+    env: {
+      HERDR_PLUGIN_CONFIG_DIR: dir,
+      HERDR_PLUGIN_STATE_DIR: join(dir, 'state'),
+      TERM: 'xterm-256color',
+      // No COMMAND_CENTER_ASCII_INPUT here: the guard is on by default.
+    },
+    stdin,
+    stdout: createFakeStdout(),
+    stderr: createFakeStderr(),
+    processRef,
+    execPath: '/usr/local/bin/node',
+    spawn: (file, args, options) => {
+      spawns.push({ file, args, options });
+      return { unref: () => {} };
+    },
+    execFile: async (file, args) => {
+      oscalls.push({ file, args });
+      return { stdout: 'com.apple.inputmethod.Korean.2SetKorean\n' };
+    },
+  });
+  const code = await pending;
+  // The guard is fire-and-forget, so give its promise chain a beat to land.
+  await new Promise((resolve) => { setTimeout(resolve, 20); });
+
+  assert.equal(code, 0);
+  assert.equal(oscalls[0]?.file, 'osascript', 'the popup asked for an ASCII hop');
+  assert.equal(oscalls[0]?.args.at(-1), 'switch-ascii');
+  const watchdog = spawns.find((entry) => entry.args?.[0]?.endsWith('restore-input.mjs'));
+  assert.ok(watchdog, 'a restore watchdog was posted');
+  assert.equal(watchdog.args[1], '7777', 'keyed on the popup pid');
+  assert.equal(watchdog.args[2], 'com.apple.inputmethod.Korean.2SetKorean');
+  assert.equal(watchdog.options.detached, true);
+});
+
+test('opting out of the ASCII hop keeps the popup from touching osascript', async () => {
+  const { dir } = await scratch();
+  const { code, spawns } = await harness(['\u001b'], { dir });
+  await new Promise((resolve) => { setTimeout(resolve, 20); });
+  assert.equal(code, 0);
+  assert.deepEqual(spawns, [], 'no watchdog, and the throwing execFile stub was never reached');
 });

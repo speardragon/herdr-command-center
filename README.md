@@ -43,6 +43,13 @@ while a popup owns the screen. If the command ran before the popup closed, it
 would either target the popup itself or be refused outright. So the runner also
 retries a `ui_busy` refusal, as a second line of defence.
 
+One more courtesy on macOS: if the popup opens while a non-ASCII input source is
+active (say, a Korean IME), it hops the keyboard to your last-used ASCII layout —
+a single-key TUI is useless when every keypress lands in a half-composed
+syllable. A detached watchdog restores the original source the moment the popup
+is gone, whichever way it went: esc, running a command, or the pane being
+killed. Set `COMMAND_CENTER_ASCII_INPUT=0` to opt out.
+
 ## Installation
 
 Requires Node.js 22+ and herdr 0.7.5+. `herdr plugin install` runs `npm ci` for you.

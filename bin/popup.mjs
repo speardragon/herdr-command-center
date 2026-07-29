@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 
 import { isLightTerminal } from '../src/appearance.mjs';
 import { readContext } from '../src/context.mjs';
+import { guardAsciiInput } from '../src/input-source.mjs';
 import { resolveEditors } from '../src/editor.mjs';
 import { herdrConfigPath, readImportable } from '../src/herdr-config.mjs';
 import { createKeyDecoder } from '../src/keys.mjs';
@@ -171,6 +172,11 @@ export async function runPopup({
 
     const decoder = createKeyDecoder();
     draw();
+    // After the first paint, not before: hopping the input source costs an
+    // osascript launch, and the popup must not wait on it to appear. The
+    // restore is owned by a detached watchdog keyed on this pid, so it fires
+    // however the popup ends.
+    void guardAsciiInput({ env, execFile, spawn, execPath, pid: processRef.pid });
 
     for await (const chunk of stdin) {
       if (stopCode !== null) break;
