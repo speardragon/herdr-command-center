@@ -87,7 +87,8 @@ herdr server reload-config
 | Key | In the list | In the add/edit form |
 | --- | --- | --- |
 | `1`–`9`, `0`, `a`–`z` | run the command in that slot | typed into the focused text field |
-| `↑` `↓` `←` `→` | move through the grid | previous / next field |
+| `↑` `↓` | move through the grid | previous / next field |
+| `←` `→` | move through the grid | move the cursor in a text field, or change `Slot`, `Type`, `Cwd` |
 | `Tab` / `Shift-Tab` | — | next / previous field |
 | `Enter` | run the highlighted command, or fill it if the slot is empty | save |
 | `shift+a` | add a command | — |
@@ -96,7 +97,7 @@ herdr server reload-config
 | `shift+o` | open `commands.toml` in your editor | — |
 | `shift+i` | import from your herdr config | — |
 | `Space` | — | change `Slot`, `Type` or `Cwd` |
-| `Backspace` | — | delete the last character |
+| `Backspace` | — | delete the character before the cursor |
 | `Esc` | close the popup | discard and go back |
 | `Ctrl-C` | close the popup | close the popup |
 
@@ -112,9 +113,20 @@ Press `shift+a` to add one without leaving the popup. `Tab` moves between fields
 `←`/`→` cycle `Slot`, `Type` and `Cwd`, and `Enter` writes it to `commands.toml`.
 
 A blinking caret marks the field you are typing into, so there is nothing to
-guess: just type. `Slot`, `Type` and `Cwd` deliberately have no caret — they are
-changed with the arrow keys, and a caret there would promise typing that does
-nothing.
+guess: just type. On `Label`, `Command` and `Description`, `←`/`→` move that
+caret through what you have already typed, so fixing a typo in the middle
+does not mean retyping everything after it — `Backspace` then removes
+whatever sits just before the caret. `Slot`, `Type` and `Cwd` deliberately
+have no caret — they are changed with the arrow keys instead, and a caret
+there would promise typing that does nothing.
+
+A line under the fields explains whichever one has focus. `Label`, `Command`
+and `Description` get one explanation of what the field is for. `Type` and
+`Cwd` instead list every value they can hold, each with its own explanation —
+`pane`, for instance, explains right there that it runs typed into the pane
+you were looking at rather than detached like `shell` — with a `›` marking
+only the one currently selected, so `←`/`→` just moves the mark rather than
+swapping the text out from under you.
 
 ![Adding a command in the popup, with the Command field focused](docs/popup-form.png)
 
@@ -231,9 +243,16 @@ get a notification saying so rather than a prompt you did not mean to send.
 
 Press `shift+i` and Command Center reads the `[[keys.command]]` entries out of your
 `~/.config/herdr/config.toml` — the prefix keybindings this plugin exists to
-replace — and offers them. Choosing one opens the add form prefilled, so you still
-choose the slot and can fix the label before it is written. Entries you have
-already added are marked, and entries whose herdr type has no equivalent here are
+replace — and offers them under a `Config` header, alongside a `Plugins`
+header for every other enabled herdr plugin you have installed, read from
+`~/.config/herdr/plugins.json` — a divider between the two so neither reads as
+part of the other. A plugin is a group, marked with `▸`; `Enter` on one
+browses its actions — including ones nobody ever bound to a key — and `Esc`
+backs out to the list you drilled in from rather than closing the whole
+thing. Choosing an actual entry, from either source, opens the add form
+prefilled, so you still choose the slot and can fix the label before it is
+written. Entries you have already added are marked, and keybinding entries
+whose herdr type has no equivalent here are
 listed with the reason rather than quietly dropped.
 
 ![The import list, reading key bindings out of the user's herdr config.toml](docs/popup-import.png)

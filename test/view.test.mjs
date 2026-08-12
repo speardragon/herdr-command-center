@@ -160,6 +160,64 @@ test('named keys are never inserted as text', () => {
   assert.equal(view.form.fields.label, '');
 });
 
+test('left and right move the caret through a text field without editing it', () => {
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'a', 'b', 'c');
+  assert.equal(view.form.fields.label, 'abc');
+  assert.equal(view.form.caret, 3);
+  view = press(view, 'left', 'left');
+  assert.equal(view.form.fields.label, 'abc', 'moving the caret must not touch the text');
+  assert.equal(view.form.caret, 1);
+  view = reduceKey(view, 'right');
+  assert.equal(view.form.caret, 2);
+});
+
+test('the caret cannot move past either end of a text field', () => {
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'a', 'b');
+  view = press(view, 'right', 'right', 'right');
+  assert.equal(view.form.caret, 2, 'right stops at the end');
+  view = press(view, 'left', 'left', 'left');
+  assert.equal(view.form.caret, 0, 'left stops at the start');
+});
+
+test('typing inserts at the caret instead of always appending', () => {
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'a', 'c');
+  view = press(view, 'left');
+  view = reduceKey(view, 'b');
+  assert.equal(view.form.fields.label, 'abc');
+  assert.equal(view.form.caret, 2);
+});
+
+test('backspace removes the grapheme before the caret, not the last one in the field', () => {
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'a', 'b', 'c');
+  view = press(view, 'left', 'left'); // caret between 'a' and 'b'
+  view = reduceKey(view, 'backspace');
+  assert.equal(view.form.fields.label, 'bc');
+  assert.equal(view.form.caret, 0);
+  // At the start of the field, backspace has nothing before the caret to remove.
+  const unchanged = reduceKey(view, 'backspace');
+  assert.equal(unchanged.form.fields.label, 'bc');
+  assert.equal(unchanged.form.caret, 0);
+});
+
+test('leaving a text field and coming back resets the caret to its end', () => {
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'a', 'b', 'c', 'left', 'left');
+  assert.equal(view.form.caret, 1);
+  view = press(view, 'tab', 'backtab');
+  assert.equal(view.form.fieldIndex, 0);
+  assert.equal(view.form.caret, 3, 'coming back to the field lands the caret at its end');
+});
+
+test('the caret survives grapheme clusters like Korean syllables as one step', () => {
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), '한', '글');
+  assert.equal(view.form.fields.label, '한글');
+  assert.equal(view.form.caret, 2);
+  view = reduceKey(view, 'left');
+  assert.equal(view.form.caret, 1);
+  view = reduceKey(view, 'backspace');
+  assert.equal(view.form.fields.label, '글');
+  assert.equal(view.form.caret, 0);
+});
+
 test('left, right, and space cycle the type and cwd choices', () => {
   let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab', 'tab');
   assert.equal(view.form.fields.type, 'shell');
@@ -435,6 +493,94 @@ test('beginImport marks what is already registered', () => {
   ]);
   assert.equal(imported.mode, 'import');
   assert.deepEqual(imported.importEntries.map((entry) => entry.already), [true, false]);
+});
+
+test('beginImport marks already-registered actions inside a group too, not just top-level entries', () => {
+  const view = createView({ doc: doc(['One']) });
+  const imported = beginImport(view, [
+    {
+      kind: 'group',
+      key: 'ray.example',
+      label: 'Example (2 actions)',
+      pluginName: 'Example',
+      reason: null,
+      actions: [
+        { kind: 'command', key: 'open', label: 'One', type: 'shell', command: 'run-0', description: '', reason: null },
+        { kind: 'command', key: 'new', label: 'New', type: 'shell', command: 'brand-new', description: '', reason: null },
+      ],
+    },
+  ]);
+  assert.deepEqual(imported.importEntries[0].actions.map((entry) => entry.already), [true, false]);
+});
+
+test('choosing a group entry drills into its actions instead of opening the add form', () => {
+  const view = beginImport(createView({ doc: doc() }), [
+    {
+      kind: 'group',
+      key: 'ray.example',
+      label: 'Example (1 action)',
+      pluginName: 'Example',
+      reason: null,
+      actions: [
+        { kind: 'command', key: 'open', label: 'Open it', type: 'pane', command: 'ray.example.open', description: '', reason: null },
+      ],
+    },
+  ]);
+  const drilled = reduceKey(view, 'enter');
+  assert.equal(drilled.mode, 'import', 'still in the import list, just a level deeper');
+  assert.equal(drilled.importEntries.length, 1);
+  assert.equal(drilled.importEntries[0].command, 'ray.example.open');
+  assert.equal(drilled.importCursor, 0);
+  assert.equal(drilled.importTitle, 'Example');
+});
+
+test('choosing a command inside a drilled-into group still opens a prefilled add form', () => {
+  const top = beginImport(createView({ doc: doc() }), [
+    {
+      kind: 'group',
+      key: 'ray.example',
+      label: 'Example (1 action)',
+      pluginName: 'Example',
+      reason: null,
+      actions: [
+        { kind: 'command', key: 'open', label: 'Open it', type: 'pane', command: 'ray.example.open', description: 'opens it', reason: null },
+      ],
+    },
+  ]);
+  const drilled = reduceKey(top, 'enter');
+  const form = reduceKey(drilled, 'enter');
+  assert.equal(form.mode, 'form');
+  assert.equal(form.form.fields.label, 'Open it');
+  assert.equal(form.form.fields.type, 'pane');
+  assert.equal(form.form.fields.command, 'ray.example.open');
+  assert.equal(form.form.fields.description, 'opens it');
+});
+
+test('escape backs out of a drilled-into group one level at a time', () => {
+  const top = beginImport(createView({ doc: doc() }), [
+    { kind: 'command', key: 'prefix+z', label: 'Z', type: 'shell', command: 'z', description: '', reason: null },
+    {
+      kind: 'group',
+      key: 'ray.example',
+      label: 'Example (1 action)',
+      pluginName: 'Example',
+      reason: null,
+      actions: [
+        { kind: 'command', key: 'open', label: 'Open it', type: 'pane', command: 'ray.example.open', description: '', reason: null },
+      ],
+    },
+  ]);
+  const drilled = reduceKey(press(top, 'down'), 'enter');
+  assert.equal(drilled.importEntries.length, 1, 'now looking at the group\'s own actions');
+
+  const backOut = reduceKey(drilled, 'escape');
+  assert.equal(backOut.mode, 'import', 'escape from inside a group returns to the list it came from');
+  assert.equal(backOut.importEntries.length, 2, 'back to the top-level list');
+  assert.equal(backOut.importCursor, 1, 'and the cursor is right where it was left');
+  assert.equal(backOut.importTitle, null);
+
+  const closed = reduceKey(backOut, 'escape');
+  assert.equal(closed.mode, 'list', 'escape with nothing left to back out of leaves the import list entirely');
 });
 
 test('choosing an import entry opens a prefilled add form', () => {

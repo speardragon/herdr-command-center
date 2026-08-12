@@ -17,6 +17,7 @@ import { resolveEditors } from '../src/editor.mjs';
 import { herdrConfigPath, readImportable } from '../src/herdr-config.mjs';
 import { createKeyDecoder } from '../src/keys.mjs';
 import { commandsPath, resolveConfigDir, resolveStateDir, runLogPath } from '../src/paths.mjs';
+import { pluginsJsonPath, readInstalledPluginGroups } from '../src/plugin-actions.mjs';
 import { gridColumns, renderView, textCursor } from '../src/render.mjs';
 import { ConfigError } from '../src/schema.mjs';
 import { ensureStore, saveStore } from '../src/store.mjs';
@@ -218,7 +219,11 @@ export async function runPopup({
           continue;
         }
         if (effect.type === 'load-import') {
-          view = beginImport(view, await readImportable(herdrConfigPath(env)));
+          const [commands, pluginGroups] = await Promise.all([
+            readImportable(herdrConfigPath(env)),
+            readInstalledPluginGroups(pluginsJsonPath(env)),
+          ]);
+          view = beginImport(view, [...commands, ...pluginGroups]);
           draw();
           continue;
         }

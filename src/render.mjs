@@ -1,22 +1,32 @@
 import { SLOT_KEYS } from './schema.mjs';
 import { clipLine, displayWidth, wrap } from './text.mjs';
-import { CHOICE_FIELDS, commandInSlot, FORM_FIELDS, gridRows } from './view.mjs';
+import { CHOICE_FIELDS, CHOICE_VALUES, commandInSlot, FORM_FIELDS, graphemesOf, gridRows } from './view.mjs';
 
 // Matches the popup size declared in herdr-plugin.toml, used when a caller has
 // no TTY dimensions to offer.
 const DEFAULT_COLUMNS = 78;
-const DEFAULT_ROWS = 24;
+const DEFAULT_ROWS = 21;
 const MAX_COLUMNS = 240;
 const MAX_ROWS = 100;
 const PADDING_X = 2;
 const PADDING_Y = 1;
 
-const LIST_FOOTER = '↑↓←→ move · enter run · slot key runs · shift+a add · shift+e edit · shift+d delete · shift+o edit file · shift+i import · esc close';
-const FORM_FOOTER = 'type to edit · tab/↑↓ field · ←→ change · enter save · esc cancel';
-const CONFIRM_FOOTER = 'y delete · any other key cancels';
-const ERROR_FOOTER = 'shift+o edit file · esc close';
-const EDITOR_FOOTER = '↑↓ move · enter open · 1-9 open · esc cancel';
-const IMPORT_FOOTER = '↑↓ move · enter set up · esc cancel';
+const LIST_FOOTER = '[↑↓←→] move · [enter] run · [slot key] runs · [shift+a] add · [shift+e] edit · [shift+d] delete · [shift+o] edit file · [shift+i] import · [esc] close';
+const FORM_FOOTER = 'type to edit · [tab/↑↓] field · [←→] move cursor / change · [enter] save · [esc] cancel';
+const CONFIRM_FOOTER = '[y] delete · any other key cancels';
+const ERROR_FOOTER = '[shift+o] edit file · [esc] close';
+const EDITOR_FOOTER = '[↑↓] move · [enter] open · [1-9] open · [esc] cancel';
+
+// enter and esc do different things depending on what is highlighted and how
+// deep the import list has been drilled into, so this footer is computed
+// per-frame rather than being a fixed string like the others.
+function importFooter(view) {
+  const entries = view.importEntries ?? [];
+  const highlighted = entries[view.importCursor];
+  const primary = highlighted?.kind === 'group' ? '[enter] browse' : '[enter] set up';
+  const dismiss = (view.importBack ?? []).length > 0 ? '[esc] back' : '[esc] cancel';
+  return `[↑↓] move · ${primary} · ${dismiss}`;
+}
 
 const FIELD_LABELS = Object.freeze({
   label: 'Label',
@@ -27,6 +37,52 @@ const FIELD_LABELS = Object.freeze({
   description: 'Description',
 });
 const FIELD_LABEL_WIDTH = 12;
+
+// One description per field, shown under the form for whichever one has
+// focus.
+const FIELD_DESCRIPTIONS = Object.freeze({
+  label: 'Shown in the popup grid. Up to 80 characters.',
+  command: 'For shell and pane, a single-line shell command. For plugin_action, <plugin_id>.<action_id>.',
+  description: 'An optional one-line note, shown under the grid when this command is selected.',
+});
+// Type and Cwd pick from a short, named set where each value behaves
+// differently, so every value is worth explaining side by side rather than
+// one at a time — unlike Slot, where every value means the same thing
+// ("this key runs it") and only the letter changes.
+const CHOICE_DESCRIPTIONS = Object.freeze({
+  type: Object.freeze({
+    shell: 'Runs detached in the background, in the resolved Cwd. Use it for things that open their own window, like "code ." or "gh browse" — you will not see stdout.',
+    pane: 'Typed into the pane you were looking at and run there, so you see the output. Use it for things like "git status" or "npm test".',
+    plugin_action: 'Invokes another herdr plugin\'s action, addressed as <plugin_id>.<action_id>. Cwd is ignored.',
+  }),
+  cwd: Object.freeze({
+    focused: 'Uses the directory of whichever pane was focused when the slot key was pressed.',
+    workspace: 'Uses the workspace\'s own directory, regardless of which pane was focused.',
+  }),
+});
+
+function focusedFieldDescription(form) {
+  const field = FORM_FIELDS[form.fieldIndex];
+  if (field === 'slot') return `Press "${form.fields.slot}" in the list to run this command.`;
+  return FIELD_DESCRIPTIONS[field] ?? '';
+}
+
+// All of a choice field's values, stacked one per line so they can be
+// compared at a glance, with a cursor marking only the one currently held —
+// the same convention the slot grid and the editor/import lists already use.
+function choiceList(field, current, width, color) {
+  const descriptions = CHOICE_DESCRIPTIONS[field] ?? {};
+  const lines = [];
+  (CHOICE_VALUES[field] ?? []).forEach((value, index) => {
+    if (index > 0) lines.push('');
+    const focused = value === current;
+    const nameLine = clipLine(`${focused ? '›' : ' '} ${value}`, width);
+    lines.push(color && focused ? styles.bold(styles.cyan(nameLine)) : nameLine);
+    const wrapped = wrap(descriptions[value] ?? '', Math.max(1, width - 2)).map((line) => `  ${line}`);
+    lines.push(...(color ? wrapped.map((line) => styles.dim(line)) : wrapped));
+  });
+  return lines;
+}
 
 // Styling is applied only after clipping so an escape code can never be counted
 // as a visible cell.
@@ -79,7 +135,7 @@ function gridRow(view, indices, cellWidth, color, faint) {
     const slot = SLOT_KEYS[index];
     const command = commandInSlot(view.doc, slot);
     const marker = index === view.cursor ? '›' : ' ';
-    const text = clipLine(`${marker} ${slot}  ${command ? command.label : EMPTY_LABEL}`, cellWidth);
+    const text = clipLine(`${marker} [${slot}] ${command ? command.label : EMPTY_LABEL}`, cellWidth);
     const padded = position === indices.length - 1
       ? text
       : text + ' '.repeat(Math.max(0, cellWidth - displayWidth(text)));
@@ -153,6 +209,14 @@ function formBody(view, width, budget, color) {
     );
     lines.push(color && focused ? styles.bold(styles.cyan(line)) : line);
   });
+  lines.push('');
+  const field = FORM_FIELDS[form.fieldIndex];
+  if (field === 'type' || field === 'cwd') {
+    lines.push(...choiceList(field, form.fields[field], width, color));
+  } else {
+    const description = wrap(focusedFieldDescription(form), width);
+    lines.push(...(color ? description.map((line) => styles.dim(line)) : description));
+  }
   if (view.formError) {
     lines.push('');
     const wrapped = wrap(view.formError, width);
@@ -187,25 +251,72 @@ function editorPickBody(view, width, budget, color) {
   const lines = [color ? styles.bold(title) : title, ''];
   (view.editorChoices ?? []).forEach((editor, index) => {
     const marker = index === view.editorCursor ? '›' : ' ';
-    const line = clipLine(`${marker} ${index + 1}. ${editor}`, width);
+    const line = clipLine(`${marker} [${index + 1}] ${editor}`, width);
     lines.push(color && index === view.editorCursor ? styles.bold(styles.cyan(line)) : line);
   });
   return lines.slice(0, Math.max(1, budget));
 }
 
+// A `group` entry is an installed plugin, not something importable by
+// itself — it exists to be browsed for the leaf `command` entries under its
+// own `actions`, so it gets a drill-in hint instead of the usual note and its
+// detail line names how many actions wait inside rather than a type/command
+// that a group does not have.
+//
+// At the top level, config keybindings and installed plugins come from two
+// different places, so each run of same-kind entries gets its own header,
+// with a divider between runs — never before the first, since there is
+// nothing above it to separate from. One level down, inside a single
+// plugin's own actions, the list is already homogeneous and gets neither.
+function importRows(view, entries) {
+  if (view.importTitle != null) {
+    return entries.map((entry, index) => ({ kind: 'entry', entry, index }));
+  }
+  const rows = [];
+  let section = null;
+  entries.forEach((entry, index) => {
+    const nextSection = entry.kind === 'group' ? 'Plugins' : 'Config';
+    if (nextSection !== section) {
+      if (section !== null) rows.push({ kind: 'divider' });
+      rows.push({ kind: 'header', text: nextSection });
+      section = nextSection;
+    }
+    rows.push({ kind: 'entry', entry, index });
+  });
+  return rows;
+}
+
 function importBody(view, width, budget, color) {
   const entries = view.importEntries ?? [];
-  const title = clipLine(`Command Center · import from herdr config · ${entries.length} found`, width);
+  const title = view.importTitle
+    ? clipLine(`Command Center · import from ${view.importTitle} · ${entries.length} action${entries.length === 1 ? '' : 's'}`, width)
+    : clipLine(`Command Center · import from herdr config · ${entries.length} found`, width);
   const lines = [color ? styles.bold(title) : title, ''];
   if (entries.length === 0) {
-    lines.push(...wrap('No [[keys.command]] entries found in your herdr config.toml.', width));
+    const message = view.importTitle
+      ? 'This plugin has no actions to import.'
+      : 'No [[keys.command]] entries or installed plugin actions were found.';
+    lines.push(...wrap(message, width));
     return lines.slice(0, Math.max(1, budget));
   }
   const rowBudget = Math.max(1, budget - lines.length - 2);
-  entries.slice(0, rowBudget).forEach((entry, index) => {
+  importRows(view, entries).slice(0, rowBudget).forEach((row) => {
+    if (row.kind === 'divider') {
+      const divider = '─'.repeat(width);
+      lines.push(color ? styles.dim(divider) : divider);
+      return;
+    }
+    if (row.kind === 'header') {
+      const header = clipLine(row.text, width);
+      lines.push(color ? styles.bold(header) : header);
+      return;
+    }
+    const { entry, index } = row;
     const marker = index === view.importCursor ? '›' : ' ';
-    const note = entry.reason ? '  (unsupported)' : (entry.already ? '  (already added)' : '');
-    const line = clipLine(`${marker} ${entry.key}  ${entry.label}${note}`, width);
+    const note = entry.kind === 'group'
+      ? '  ▸'
+      : (entry.reason ? '  (unsupported)' : (entry.already ? '  (already added)' : ''));
+    const line = clipLine(`${marker} [${entry.key}] ${entry.label}${note}`, width);
     const styled = color && index === view.importCursor
       ? styles.bold(styles.cyan(line))
       : (color && (entry.reason || entry.already) ? styles.dim(line) : line);
@@ -213,7 +324,9 @@ function importBody(view, width, budget, color) {
   });
   const chosen = entries[Math.max(0, Math.min(entries.length - 1, view.importCursor))];
   lines.push('');
-  const detail = clipLine(`${chosen.type ?? '—'} · ${chosen.command}`, width);
+  const detail = chosen.kind === 'group'
+    ? clipLine(`${chosen.actions?.length ?? 0} action${(chosen.actions?.length ?? 0) === 1 ? '' : 's'} · enter to browse`, width)
+    : clipLine(`${chosen.type ?? '—'} · ${chosen.command}`, width);
   lines.push(color ? styles.dim(detail) : detail);
   return lines;
 }
@@ -233,7 +346,7 @@ const FOOTERS = Object.freeze({
   'confirm-delete': CONFIRM_FOOTER,
   error: ERROR_FOOTER,
   'editor-pick': EDITOR_FOOTER,
-  import: IMPORT_FOOTER,
+  import: importFooter,
 });
 
 export function renderLines(view, size = {}) {
@@ -243,7 +356,9 @@ export function renderLines(view, size = {}) {
   const color = size?.color === true;
   const light = size?.light === true;
 
-  const footerLines = wrap(FOOTERS[view.mode] ?? LIST_FOOTER, width);
+  const footerSource = FOOTERS[view.mode] ?? LIST_FOOTER;
+  const footerText = typeof footerSource === 'function' ? footerSource(view) : footerSource;
+  const footerLines = wrap(footerText, width);
   const footer = color ? footerLines.map((line) => styles.dim(line)) : footerLines;
   const bodyBudget = Math.max(1, height - footer.length);
   const body = (BODIES[view.mode] ?? listBody)(view, width, bodyBudget, color, light).slice(0, bodyBudget);
@@ -280,7 +395,9 @@ export function textCursor(view, size = {}) {
 
   // "› " + the label padded to FIELD_LABEL_WIDTH + " ", all ASCII.
   const valueColumn = 2 + FIELD_LABEL_WIDTH + 1;
-  const typed = displayWidth(view.form.fields[field] ?? '');
+  const graphemes = graphemesOf(view.form.fields[field]);
+  const caret = Math.max(0, Math.min(view.form.caret ?? graphemes.length, graphemes.length));
+  const typed = displayWidth(graphemes.slice(0, caret).join(''));
   const column = Math.min(valueColumn + typed, width - 1);
   return { row: PADDING_Y + bodyLine, column: PADDING_X + column };
 }

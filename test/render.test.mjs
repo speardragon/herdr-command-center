@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { SLOT_KEYS } from '../src/schema.mjs';
 import { displayWidth } from '../src/text.mjs';
-import { createView, reduceKey } from '../src/view.mjs';
+import { beginImport, createView, reduceKey } from '../src/view.mjs';
 import { gridColumns, renderLines, renderView, textCursor } from '../src/render.mjs';
 
 const SIZE = { columns: 78, rows: 24 };
@@ -61,7 +61,7 @@ test('renderLines survives an absurdly small and an absurdly large terminal', ()
 
 test('renderLines defaults a missing size to the manifest popup size', () => {
   const lines = renderLines(createView({ doc: doc() }));
-  assert.equal(lines.length, 24);
+  assert.equal(lines.length, 21);
 });
 
 test('the list shows a header with the command count', () => {
@@ -72,18 +72,18 @@ test('the list shows a header with the command count', () => {
 
 test('the grid shows the slot key next to each command and marks the cursor', () => {
   const text = renderView(createView({ doc: doc() }), SIZE);
-  assert.match(text, /› 1  Open in VS Code/u);
-  assert.match(text, / 2 {2}Open repo on GitHub/u);
+  assert.match(text, /› \[1\] Open in VS Code/u);
+  assert.match(text, / \[2\] Open repo on GitHub/u);
   const moved = renderView(reduceKey(createView({ doc: doc() }), 'down'), SIZE);
-  assert.match(moved, /› 2  Open repo on GitHub/u);
+  assert.match(moved, /› \[2\] Open repo on GitHub/u);
 });
 
 test('every command shows its own slot key, even past the ninth', () => {
   const labels = Array.from({ length: 12 }, (unused, index) => `cmd-${index}`);
   const text = renderView(createView({ doc: doc(labels), cursor: 11 }), { columns: 78, rows: 40 });
-  assert.match(text, /0 {2}cmd-9/u);
-  assert.match(text, /a {2}cmd-10/u);
-  assert.match(text, /b {2}cmd-11/u);
+  assert.match(text, /\[0\] cmd-9/u);
+  assert.match(text, /\[a\] cmd-10/u);
+  assert.match(text, /\[b\] cmd-11/u);
 });
 
 test('the list shows the selected command type, command, and description', () => {
@@ -101,10 +101,10 @@ test('the list footer spells the action keys out as shift+key', () => {
   // claim here is that it advertises these keys, not that it fits on one line.
   const text = renderView(createView({ doc: doc() }), { columns: 120, rows: 24 })
     .replace(/\s+/gu, ' ');
-  for (const fragment of ['enter run', 'slot key runs', 'shift+a add', 'shift+e edit', 'shift+d delete', 'shift+o edit file', 'shift+i import', 'esc close']) {
+  for (const fragment of ['[enter] run', '[slot key] runs', '[shift+a] add', '[shift+e] edit', '[shift+d] delete', '[shift+o] edit file', '[shift+i] import', '[esc] close']) {
     assert.ok(text.includes(fragment), `footer is missing "${fragment}"`);
   }
-  assert.ok(!text.includes('1-9 run'), 'slots are no longer a numeric range');
+  assert.ok(!text.includes('[1-9] run'), 'slots are no longer a numeric range');
 });
 
 test('a grid taller than the budget scrolls and says how much is hidden', () => {
@@ -114,13 +114,13 @@ test('a grid taller than the budget scrolls and says how much is hidden', () => 
   // Deep enough into the first column that the window has to move with it.
   const deep = renderView(createView({ doc: doc(), cursor: 16 }), SIZE);
   assert.match(deep, /↑ \d+ more/u);
-  assert.match(deep, /› g {2}\(empty\)/u, 'the cursor row stays inside the window');
+  assert.match(deep, /› \[g\] \(empty\)/u, 'the cursor row stays inside the window');
 });
 
 test('every slot is shown, and the unclaimed ones read as empty', () => {
   const text = renderView(createView({ doc: doc() }), { columns: 120, rows: 28 });
   for (const slot of SLOT_KEYS) {
-    assert.ok(text.includes(` ${slot}  `), `slot ${slot} is not shown`);
+    assert.ok(text.includes(`[${slot}] `), `slot ${slot} is not shown`);
   }
   assert.equal((text.match(/\(empty\)/gu) ?? []).length, SLOT_KEYS.length - 3);
 });
@@ -129,10 +129,10 @@ test('an empty slot is greyed toward the background rather than hidden', () => {
   const size = { columns: 120, rows: 28, color: true };
   const colored = renderLines(createView({ doc: doc() }), size);
   // Slots 1-3 are taken by the fixture, so 4 is the first unclaimed one.
-  const empty = colored.find((entry) => stripAnsi(entry).includes('4  (empty)'));
-  const claimed = colored.find((entry) => stripAnsi(entry).includes('2  Open repo on GitHub'));
-  assert.ok(empty.includes(`${FAINT_DARK}  4  (empty)`), 'the empty cell is the theme\'s bright-black');
-  assert.ok(!claimed.includes(`${FAINT_DARK}  2  Open repo`), 'a claimed slot is left plain');
+  const empty = colored.find((entry) => stripAnsi(entry).includes('[4] (empty)'));
+  const claimed = colored.find((entry) => stripAnsi(entry).includes('[2] Open repo on GitHub'));
+  assert.ok(empty.includes(`${FAINT_DARK}  [4] (empty)`), 'the empty cell is the theme\'s bright-black');
+  assert.ok(!claimed.includes(`${FAINT_DARK}  [2] Open repo`), 'a claimed slot is left plain');
 });
 
 test('the empty grey inverts on a light terminal', () => {
@@ -140,8 +140,8 @@ test('the empty grey inverts on a light terminal', () => {
   // out rather than recede; the grey has to move toward white instead.
   const size = { columns: 120, rows: 28, color: true, light: true };
   const colored = renderLines(createView({ doc: doc() }), size);
-  const empty = colored.find((entry) => stripAnsi(entry).includes('4  (empty)'));
-  assert.ok(empty.includes(`${FAINT_LIGHT}  4  (empty)`), 'the empty cell is the theme\'s bright-white');
+  const empty = colored.find((entry) => stripAnsi(entry).includes('[4] (empty)'));
+  assert.ok(empty.includes(`${FAINT_LIGHT}  [4] (empty)`), 'the empty cell is the theme\'s bright-white');
   assert.ok(!empty.includes(FAINT_DARK), 'and not the dark-terminal grey');
 });
 
@@ -184,6 +184,58 @@ test('the edit form is titled and prefilled', () => {
   assert.match(text, /Open in VS Code/u);
 });
 
+// Flattened, because the description legitimately wraps across several lines
+// on a narrow-ish popup and the claim here is only that it appears, not that
+// it fits on one line.
+function flat(text) {
+  return text.replace(/\s+/gu, ' ');
+}
+
+test('the form describes whichever field currently has focus', () => {
+  const view = reduceKey(createView({ doc: doc() }), 'A');
+  assert.match(flat(renderView(view, SIZE)), /Shown in the popup grid/u, 'Label is described');
+  assert.match(flat(renderView(press(view, 'tab', 'tab', 'tab'), SIZE)), /single-line shell command/u, 'Command is described');
+  assert.match(
+    flat(renderView(press(view, 'tab', 'tab', 'tab', 'tab', 'tab'), SIZE)),
+    /optional one-line note/u,
+    'Description is described',
+  );
+});
+
+test('a choice field lists every value with its own description, marking only the one held', () => {
+  // Wide enough that three full descriptions fit alongside the fields and footer.
+  const wide = { columns: 120, rows: 32 };
+  const view = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab', 'tab');
+  const text = flat(renderView(view, wide));
+  assert.match(text, /you will not see stdout/u, 'shell is described');
+  assert.match(text, /so you see the output/u, 'pane is described too, even though it is not selected');
+  assert.match(text, /Cwd is ignored/u, 'plugin_action is described too');
+  assert.ok(text.includes('› shell'), 'shell is marked as the one currently held');
+  assert.ok(!text.includes('› pane') && !text.includes('› plugin_action'), 'only shell is marked');
+
+  const moved = flat(renderView(reduceKey(view, 'right'), wide));
+  assert.ok(moved.includes('› pane'), 'the mark follows the selection to pane');
+  assert.ok(!moved.includes('› shell'), 'shell is no longer marked once pane is selected');
+});
+
+test('the slot description names the exact key that will run the command', () => {
+  const view = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab');
+  assert.match(flat(renderView(view, SIZE)), /Press "4" in the list to run this command\./u);
+  const moved = reduceKey(view, 'right');
+  assert.match(flat(renderView(moved, SIZE)), /Press "5" in the list to run this command\./u);
+});
+
+test('the cwd field lists both values and marks only the selected one', () => {
+  const view = press(reduceKey(createView({ doc: doc() }), 'A'), 'tab', 'tab', 'tab', 'tab');
+  const text = flat(renderView(view, SIZE));
+  assert.match(text, /whichever pane was focused/u, 'focused is described');
+  assert.match(text, /workspace's own directory/u, 'workspace is described too, even though it is not selected');
+  assert.ok(text.includes('› focused') && !text.includes('› workspace'), 'only focused is marked');
+
+  const moved = flat(renderView(reduceKey(view, 'right'), SIZE));
+  assert.ok(moved.includes('› workspace') && !moved.includes('› focused'), 'the mark follows the selection');
+});
+
 test('choice fields advertise that arrows change them', () => {
   const text = renderView(reduceKey(createView({ doc: doc() }), 'A'), SIZE);
   assert.match(text, /shell\s+\(←→\)/u);
@@ -203,7 +255,7 @@ test('a form validation failure is rendered', () => {
 
 test('the form footer advertises its keys', () => {
   const text = renderView(reduceKey(createView({ doc: doc() }), 'A'), SIZE);
-  for (const fragment of ['tab', 'enter save', 'esc cancel']) {
+  for (const fragment of ['tab', '[enter] save', '[esc] cancel']) {
     assert.ok(text.includes(fragment), `form footer is missing "${fragment}"`);
   }
 });
@@ -227,7 +279,7 @@ test('the delete confirmation names the command', () => {
   const view = reduceKey(createView({ doc: doc() }), 'D');
   const text = renderView(view, SIZE);
   assert.match(text, /Delete "Open in VS Code"\?/u);
-  assert.match(text, /y delete/u);
+  assert.match(text, /\[y\] delete/u);
 });
 
 test('error mode shows the config error and only its own keys', () => {
@@ -235,7 +287,7 @@ test('error mode shows the config error and only its own keys', () => {
   const text = renderView(view, SIZE);
   assert.match(text, /Command Center · config error/u);
   assert.match(text, /commands\.toml is not valid JSON/u);
-  assert.match(text, /shift\+o edit file/u);
+  assert.match(text, /\[shift\+o\] edit file/u);
   assert.ok(!text.includes('a add'));
 });
 
@@ -277,6 +329,16 @@ test('textCursor advances past what has been typed, counting CJK as two cells', 
   assert.equal(textCursor(view, SIZE).column, 19);
   view = press(view, '배', '포');
   assert.equal(textCursor(view, SIZE).column, 23);
+});
+
+test('textCursor follows the caret back into the middle of a field, not just its end', () => {
+  let view = press(reduceKey(createView({ doc: doc() }), 'A'), 'a', 'b', 'c');
+  assert.equal(textCursor(view, SIZE).column, 20);
+  view = press(view, 'left', 'left');
+  assert.equal(textCursor(view, SIZE).column, 18, 'the cursor sits right after "a", not at the end of "abc"');
+  view = reduceKey(view, 'x');
+  assert.equal(view.form.fields.label, 'axbc');
+  assert.equal(textCursor(view, SIZE).column, 19, 'the inserted character moves the cursor past it');
 });
 
 test('textCursor gives choice fields no caret, since typing does nothing there', () => {
@@ -321,7 +383,7 @@ test('the grid shows every slot key next to its command', () => {
   const labels = Array.from({ length: 12 }, (unused, index) => `cmd-${index}`);
   const text = renderView(createView({ doc: doc(labels) }), { columns: 120, rows: 24 });
   for (const slot of [...'1234567890ab']) {
-    assert.ok(text.includes(`${slot} `), `slot ${slot} is not shown`);
+    assert.ok(text.includes(`[${slot}] `), `slot ${slot} is not shown`);
   }
   assert.ok(text.includes('cmd-11'), 'the twelfth command is reachable');
 });
@@ -333,8 +395,8 @@ test('the renderer and the reducer agree on the column count', () => {
   for (const size of [{ columns: 40, rows: 24 }, { columns: 80, rows: 24 }, { columns: 200, rows: 24 }]) {
     const columns = gridColumns(view, size);
     const slot = SLOT_KEYS[reduceKey(view, 'right', { columns }).cursor];
-    const firstRow = renderLines(view, size).find((line) => line.includes('› 1  '));
-    assert.ok(firstRow.includes(` ${slot}  `), `right leaves the drawn row at ${size.columns} columns`);
+    const firstRow = renderLines(view, size).find((line) => line.includes('› [1] '));
+    assert.ok(firstRow.includes(`[${slot}] `), `right leaves the drawn row at ${size.columns} columns`);
   }
 });
 
@@ -344,4 +406,94 @@ test('the grid lays the slots out down a column, not across', () => {
   const row = lines.find((line) => line.includes('cmd-0'));
   assert.ok(!row.includes('cmd-1'), 'the second slot is on the next row down');
   assert.ok(lines.some((line) => line.includes('cmd-1')), 'and it is still drawn');
+});
+
+function group(overrides = {}) {
+  return {
+    kind: 'group',
+    key: 'ray.example',
+    label: 'Example (1 action)',
+    pluginName: 'Example',
+    reason: null,
+    actions: [
+      { kind: 'command', key: 'open', label: 'Open it', type: 'pane', command: 'ray.example.open', description: '', reason: null },
+    ],
+    ...overrides,
+  };
+}
+
+test('a group entry gets a drill-in hint instead of the usual (already added)/(unsupported) note', () => {
+  const view = beginImport(createView({ doc: doc() }), [group()]);
+  const text = renderView(view, SIZE);
+  assert.match(text, /Example \(1 action\)\s+▸/u);
+});
+
+test('the highlighted group names how many actions wait inside it, not a type/command it does not have', () => {
+  const view = beginImport(createView({ doc: doc() }), [group()]);
+  const text = renderView(view, SIZE);
+  assert.match(text, /1 action · enter to browse/u);
+});
+
+test('drilling into a group changes the title to name the plugin and shows its actions', () => {
+  const view = beginImport(createView({ doc: doc() }), [group()]);
+  const drilled = reduceKey(view, 'enter');
+  const text = renderView(drilled, SIZE);
+  assert.match(text, /import from Example · 1 action/u);
+  assert.match(text, /\[open\] Open it/u);
+});
+
+test('the highlighted command inside a drilled group shows its type and command as usual', () => {
+  const view = beginImport(createView({ doc: doc() }), [group()]);
+  const drilled = reduceKey(view, 'enter');
+  assert.match(renderView(drilled, SIZE), /pane · ray\.example\.open/u);
+});
+
+test('the import footer offers to browse a highlighted group and set up a highlighted command', () => {
+  const onGroup = renderView(beginImport(createView({ doc: doc() }), [group()]), SIZE);
+  assert.match(onGroup, /\[enter\] browse/u);
+  assert.match(onGroup, /\[esc\] cancel/u);
+
+  const drilled = reduceKey(beginImport(createView({ doc: doc() }), [group()]), 'enter');
+  const onCommand = renderView(drilled, SIZE);
+  assert.match(onCommand, /\[enter\] set up/u);
+  assert.match(onCommand, /\[esc\] back/u, 'esc says "back" once there is a level to return to');
+});
+
+test('an empty import list explains both sources it looked at', () => {
+  const text = renderView(beginImport(createView({ doc: doc() }), []), SIZE);
+  assert.match(text, /No \[\[keys\.command\]\] entries or installed plugin actions were found\./u);
+});
+
+function configEntry(overrides = {}) {
+  return {
+    kind: 'command', key: 'prefix+z', label: 'Dummy', type: 'shell', command: 'echo hi', description: '', reason: null, ...overrides,
+  };
+}
+
+test('the top-level list separates config keybindings from plugins with a header and a divider', () => {
+  const view = beginImport(createView({ doc: doc() }), [configEntry(), group()]);
+  const lines = renderLines(view, { columns: 100, rows: 26 });
+  const configHeaderIndex = lines.findIndex((line) => line.trim() === 'Config');
+  const dividerIndex = lines.findIndex((line) => /^─+$/u.test(line.trim()));
+  const pluginsHeaderIndex = lines.findIndex((line) => line.trim() === 'Plugins');
+  assert.ok(configHeaderIndex >= 0, 'a Config header appears');
+  assert.ok(dividerIndex > configHeaderIndex, 'a divider separates the two sections');
+  assert.ok(pluginsHeaderIndex > dividerIndex, 'a Plugins header follows the divider');
+});
+
+test('a divider never appears before the very first section, only between sections', () => {
+  const onlyConfig = renderLines(beginImport(createView({ doc: doc() }), [configEntry()]), { columns: 100, rows: 26 });
+  assert.ok(!onlyConfig.some((line) => /^─+$/u.test(line.trim())), 'nothing above Config to separate from');
+  assert.ok(onlyConfig.some((line) => line.trim() === 'Config'));
+
+  const onlyPlugins = renderLines(beginImport(createView({ doc: doc() }), [group()]), { columns: 100, rows: 26 });
+  assert.ok(!onlyPlugins.some((line) => /^─+$/u.test(line.trim())), 'nothing above Plugins to separate from either');
+  assert.ok(onlyPlugins.some((line) => line.trim() === 'Plugins'));
+  assert.ok(!onlyPlugins.some((line) => line.trim() === 'Config'), 'no header for a section with nothing in it');
+});
+
+test('a drilled-into plugin\'s action list is homogeneous and gets no section headers at all', () => {
+  const drilled = press(beginImport(createView({ doc: doc() }), [configEntry(), group()]), 'down', 'enter');
+  const text = renderView(drilled, SIZE);
+  assert.ok(!text.includes('Config') && !text.includes('Plugins'), 'one plugin\'s own actions need no section labels');
 });

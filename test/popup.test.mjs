@@ -94,7 +94,7 @@ test('runPopup seeds commands.toml on first open and draws the list', async () =
   assert.equal(code, 0);
   assert.equal(await readFile(file, 'utf8'), renderConfigToml(defaultConfig()));
   assert.match(stdout.lastFrame, /Command Center · 3 commands/u);
-  assert.match(stdout.lastFrame, /1 {2}Open in VS Code/u);
+  assert.match(stdout.lastFrame, /\[1\] Open in VS Code/u);
 });
 
 test('runPopup enters and restores raw mode', async () => {
@@ -201,8 +201,8 @@ test('O opens a picker when commands.toml names several editor candidates', asyn
   // No candidate is spawned yet: the popup is waiting on a pick.
   assert.deepEqual(spawns, []);
   assert.match(stdout.lastFrame, /Open commands\.toml with/u);
-  assert.match(stdout.lastFrame, /1\. code/u);
-  assert.match(stdout.lastFrame, /2\. vim/u);
+  assert.match(stdout.lastFrame, /\[1\] code/u);
+  assert.match(stdout.lastFrame, /\[2\] vim/u);
   void file;
 });
 
@@ -483,7 +483,13 @@ test('I lists the commands in the herdr config and adds the chosen one', async (
 
   const { code, stdout } = await harness(
     ['I', '\r', '\r', '\u001b'],
-    { dir, extraEnv: { HERDR_CONFIG_PATH: herdrConfig } },
+    {
+      dir,
+      extraEnv: {
+        HERDR_CONFIG_PATH: herdrConfig,
+        HERDR_PLUGINS_JSON_PATH: join(dir, 'no-such-plugins.json'),
+      },
+    },
   );
   assert.equal(code, 0);
   assert.ok(stdout.frames.some((frame) => frame.includes('import from herdr config')));
@@ -491,6 +497,84 @@ test('I lists the commands in the herdr config and adds the chosen one', async (
   const written = await readFile(file, 'utf8');
   assert.ok(written.includes('command = "lazygit"'), written);
   assert.ok(written.includes('label = "git TUI"'), written);
+});
+
+test('I also offers installed plugins, browsable down to a specific action', async () => {
+  const { dir, file } = await scratch();
+  const pluginsJson = join(dir, 'plugins.json');
+  await writeFile(pluginsJson, JSON.stringify([
+    {
+      plugin_id: 'ray.file-explorer',
+      name: 'File Explorer',
+      enabled: true,
+      actions: [
+        { id: 'open', title: 'Open file explorer' },
+        { id: 'open-tab', title: 'Open file explorer (new tab)' },
+      ],
+    },
+    {
+      plugin_id: 'ray.disabled-thing',
+      name: 'Disabled Thing',
+      enabled: false,
+      actions: [{ id: 'go', title: 'Go' }],
+    },
+    {
+      plugin_id: 'cdragon.command-center',
+      name: 'Command Center',
+      enabled: true,
+      actions: [{ id: 'open', title: 'Open the command palette' }],
+    },
+  ]), 'utf8');
+
+  const keys = ['I', String.fromCharCode(13), String.fromCharCode(13), String.fromCharCode(13), String.fromCharCode(27)];
+  const { code, stdout } = await harness(keys, {
+    dir,
+    extraEnv: {
+      HERDR_CONFIG_PATH: join(dir, 'no-such-config.toml'),
+      HERDR_PLUGINS_JSON_PATH: pluginsJson,
+    },
+  });
+  assert.equal(code, 0);
+  assert.ok(stdout.frames.some((frame) => frame.includes('File Explorer (2 actions)')));
+  assert.ok(!stdout.frames.some((frame) => frame.includes('Disabled Thing')));
+  assert.ok(!stdout.frames.some((frame) => frame.includes('command-center')));
+  assert.ok(stdout.frames.some((frame) => frame.includes('import from File Explorer')));
+  assert.ok(stdout.frames.some((frame) => frame.includes('Open file explorer')));
+  const written = await readFile(file, 'utf8');
+  assert.ok(written.includes('command = "ray.file-explorer.open"'), written);
+  assert.ok(written.includes('label = "Open file explorer"'), written);
+});
+
+test("escaping out of a plugin's action list goes back to the plugin list, not out of import", async () => {
+  const { dir } = await scratch();
+  const pluginsJson = join(dir, 'plugins.json');
+  await writeFile(pluginsJson, JSON.stringify([
+    { plugin_id: 'ray.a', name: 'Plugin A', enabled: true, actions: [{ id: 'x', title: 'X' }] },
+  ]), 'utf8');
+
+  // enter drills into Plugin A; the first escape must back out to the plugin
+  // list rather than closing the popup, so a second escape (back to the main
+  // list) and a third (close) are still needed to end the run cleanly.
+  const keys = [
+    'I',
+    String.fromCharCode(13),
+    String.fromCharCode(27),
+    String.fromCharCode(27),
+    String.fromCharCode(27),
+  ];
+  const { code, stdout } = await harness(keys, {
+    dir,
+    extraEnv: {
+      HERDR_CONFIG_PATH: join(dir, 'no-such-config.toml'),
+      HERDR_PLUGINS_JSON_PATH: pluginsJson,
+    },
+  });
+  assert.equal(code, 0);
+  const frames = stdout.frames;
+  const backOnTopLevel = frames.find((frame, index) => (
+    index > 0 && frame.includes('import from herdr config') && frames[index - 1].includes('import from Plugin A')
+  ));
+  assert.ok(backOnTopLevel, 'escape returned to the plugin list instead of closing the popup');
 });
 
 test('the popup hops to an ASCII input source and posts a restore watchdog', async () => {

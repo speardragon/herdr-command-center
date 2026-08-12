@@ -16,14 +16,18 @@ function step(index, delta, length) {
   return (index + delta + length) % length;
 }
 
-function removeLastGrapheme(value) {
-  if (value.length === 0) return '';
+// Grapheme clusters, not code units: a Korean syllable or an emoji must move
+// and delete as one cell, matching what the terminal draws for one keypress.
+export function graphemesOf(value) {
+  const text = String(value ?? '');
   if (typeof Intl.Segmenter === 'function') {
-    const segments = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)];
-    if (segments.length === 0) return '';
-    return value.slice(0, segments.at(-1).index);
+    return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((entry) => entry.segment);
   }
-  return [...value].slice(0, -1).join('');
+  return [...text];
+}
+
+function caretForField(fields, field) {
+  return graphemesOf(fields[field]).length;
 }
 
 function freeSlots(doc, keepSlot = null) {
@@ -45,31 +49,35 @@ export function commandInSlot(doc, slot) {
 function emptyForm(doc, preferredSlot = null) {
   const available = freeSlots(doc);
   const slot = available.includes(preferredSlot) ? preferredSlot : available[0] ?? '';
+  const fields = {
+    label: '', slot, type: 'shell', command: '', cwd: 'focused', description: '',
+  };
   return {
     commandId: null,
     fieldIndex: 0,
+    caret: caretForField(fields, 'label'),
     slotChoices: available,
-    fields: {
-      label: '', slot, type: 'shell', command: '', cwd: 'focused', description: '',
-    },
+    fields,
   };
 }
 
 function formFor(command, doc) {
   // The command keeps its own slot as a choice, plus everything still unclaimed.
   const available = [command.slot, ...freeSlots(doc, command.slot).filter((s) => s !== command.slot)];
+  const fields = {
+    label: command.label,
+    slot: command.slot,
+    type: command.type,
+    command: command.command,
+    cwd: command.cwd,
+    description: command.description,
+  };
   return {
     commandId: command.id,
     fieldIndex: 0,
+    caret: caretForField(fields, 'label'),
     slotChoices: available,
-    fields: {
-      label: command.label,
-      slot: command.slot,
-      type: command.type,
-      command: command.command,
-      cwd: command.cwd,
-      description: command.description,
-    },
+    fields,
   };
 }
 
@@ -84,6 +92,8 @@ export function createView({ doc, error = null, cursor = 0 } = {}) {
     form: null,
     importEntries: [],
     importCursor: 0,
+    importBack: [],
+    importTitle: null,
     editorChoices: [],
     editorCursor: 0,
     effect: null,
@@ -102,52 +112,88 @@ export function beginEditorPick(view, candidates) {
   };
 }
 
-// The reducer does no I/O, so the popup reads the herdr config and hands the
-// entries in. `already` marks what this plugin has registered, so the user is not
-// offered a duplicate without knowing it.
+// The reducer does no I/O, so the popup reads the herdr config and the
+// installed-plugin registry and hands the entries in, already merged into one
+// list. `already` marks what this plugin has registered, so the user is not
+// offered a duplicate without knowing it — recursively, since a `group` entry
+// (an installed plugin, browsable for its actions) carries its own leaves
+// under `actions` rather than being importable itself.
 export function beginImport(view, entries) {
   const registered = new Set((view.doc.commands ?? []).map((command) => `${command.type} ${command.command}`));
+  const mark = (entry) => ({
+    ...entry,
+    already: registered.has(`${entry.type} ${entry.command}`),
+    ...(Array.isArray(entry.actions) ? { actions: entry.actions.map(mark) } : {}),
+  });
   return {
     ...view,
     mode: 'import',
-    importEntries: entries.map((entry) => ({
-      ...entry,
-      already: registered.has(`${entry.type} ${entry.command}`),
-    })),
+    importEntries: entries.map(mark),
     importCursor: 0,
+    importBack: [],
+    importTitle: null,
     effect: null,
   };
 }
 
 function reduceImport(view, key) {
   const entries = view.importEntries ?? [];
-  if (key === 'escape') return { ...view, mode: 'list', importEntries: [], importCursor: 0 };
+  const back = view.importBack ?? [];
+  if (key === 'escape') {
+    // Backing out of a plugin's action list returns to wherever it was opened
+    // from, rather than closing the whole import list out from under you.
+    if (back.length > 0) {
+      const previous = back.at(-1);
+      return {
+        ...view,
+        importEntries: previous.entries,
+        importCursor: previous.cursor,
+        importTitle: previous.title,
+        importBack: back.slice(0, -1),
+      };
+    }
+    return { ...view, mode: 'list', importEntries: [], importCursor: 0, importBack: [], importTitle: null };
+  }
   if (key === 'up') return { ...view, importCursor: step(view.importCursor, -1, entries.length) };
   if (key === 'down') return { ...view, importCursor: step(view.importCursor, 1, entries.length) };
   if (key !== 'enter') return view;
   const entry = entries[view.importCursor];
-  if (!entry || !entry.type) return view;
+  if (!entry) return view;
+  if (entry.kind === 'group') {
+    return {
+      ...view,
+      importEntries: entry.actions ?? [],
+      importCursor: 0,
+      importTitle: entry.pluginName ?? entry.label,
+      importBack: [...back, { entries, cursor: view.importCursor, title: view.importTitle ?? null }],
+    };
+  }
+  if (!entry.type) return view;
   // Hand it to the ordinary add form, prefilled: the user still picks the slot and
   // can fix the label before anything is written.
   const available = freeSlots(view.doc);
+  const fields = {
+    label: entry.label,
+    slot: available[0] ?? '',
+    type: entry.type,
+    command: entry.command,
+    cwd: 'focused',
+    description: entry.description,
+  };
   return {
     ...view,
     mode: 'form',
     importEntries: [],
     importCursor: 0,
+    importBack: [],
+    importTitle: null,
     formError: null,
     form: {
       commandId: null,
       fieldIndex: 0,
+      caret: caretForField(fields, 'label'),
       slotChoices: available,
-      fields: {
-        label: entry.label,
-        slot: available[0] ?? '',
-        type: entry.type,
-        command: entry.command,
-        cwd: 'focused',
-        description: entry.description,
-      },
+      fields,
     },
   };
 }
@@ -293,15 +339,55 @@ function submitForm(view) {
   };
 }
 
+// The caret always lands at the end of whatever field is newly focused: that
+// is where typing has always resumed, and arriving anywhere else would make
+// tabbing through a prefilled edit form feel like it skipped a step.
+function focusField(view, fieldIndex) {
+  const field = FORM_FIELDS[fieldIndex];
+  return { ...view.form, fieldIndex, caret: caretForField(view.form.fields, field) };
+}
+
+function caretIn(form, field) {
+  return Math.max(0, Math.min(form.caret ?? 0, graphemesOf(form.fields[field]).length));
+}
+
+// Insertion and deletion both go through the caret rather than always
+// touching the end of the string, so fixing a typo in the middle of a label
+// no longer means retyping everything after it.
+function insertAtCaret(view, field, text) {
+  const { form } = view;
+  const graphemes = graphemesOf(form.fields[field]);
+  const caret = caretIn(form, field);
+  graphemes.splice(caret, 0, text);
+  return {
+    ...view,
+    formError: null,
+    form: { ...form, caret: caret + 1, fields: { ...form.fields, [field]: graphemes.join('') } },
+  };
+}
+
+function deleteBeforeCaret(view, field) {
+  const { form } = view;
+  const graphemes = graphemesOf(form.fields[field]);
+  const caret = caretIn(form, field);
+  if (caret === 0) return view;
+  graphemes.splice(caret - 1, 1);
+  return {
+    ...view,
+    formError: null,
+    form: { ...form, caret: caret - 1, fields: { ...form.fields, [field]: graphemes.join('') } },
+  };
+}
+
 function reduceForm(view, key) {
   const { form } = view;
   if (key === 'escape') return { ...view, mode: 'list', form: null, formError: null };
   if (key === 'enter') return submitForm(view);
   if (key === 'tab' || key === 'down') {
-    return { ...view, form: { ...form, fieldIndex: step(form.fieldIndex, 1, FORM_FIELDS.length) } };
+    return { ...view, form: focusField(view, step(form.fieldIndex, 1, FORM_FIELDS.length)) };
   }
   if (key === 'backtab' || key === 'up') {
-    return { ...view, form: { ...form, fieldIndex: step(form.fieldIndex, -1, FORM_FIELDS.length) } };
+    return { ...view, form: focusField(view, step(form.fieldIndex, -1, FORM_FIELDS.length)) };
   }
   const field = FORM_FIELDS[form.fieldIndex];
   if (CHOICE_FIELDS.has(field)) {
@@ -309,12 +395,17 @@ function reduceForm(view, key) {
     if (key === 'right' || key === 'space') return cycleChoice(view, field, 1);
     return view;
   }
-  if (key === 'backspace') return setField(view, field, removeLastGrapheme(form.fields[field]));
-  if (key === 'space') return setField(view, field, `${form.fields[field]} `);
+  const caret = caretIn(form, field);
+  if (key === 'left') return { ...view, form: { ...form, caret: Math.max(0, caret - 1) } };
+  if (key === 'right') {
+    return { ...view, form: { ...form, caret: Math.min(graphemesOf(form.fields[field]).length, caret + 1) } };
+  }
+  if (key === 'backspace') return deleteBeforeCaret(view, field);
+  if (key === 'space') return insertAtCaret(view, field, ' ');
   // Every canonical key name is longer than one grapheme, so this admits
   // printable input only — including Korean syllables and emoji.
   if (typeof key === 'string' && [...key].length === 1) {
-    return setField(view, field, `${form.fields[field]}${key}`);
+    return insertAtCaret(view, field, key);
   }
   return view;
 }

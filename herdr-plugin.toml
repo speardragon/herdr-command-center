@@ -19,7 +19,7 @@ id = "palette"
 title = "Command Center"
 placement = "popup"
 width = "90%"
-height = "80%"
+height = "70%"
 command = ["node", "bin/popup.mjs"]
 
 [[actions]]
