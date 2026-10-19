@@ -24,8 +24,9 @@ async function scratch() {
   return { dir, file: join(dir, 'commands.toml') };
 }
 
-async function harness(keys, { dir, extraEnv = {}, size } = {}) {
+async function harness(keys, { dir, extraEnv = {}, size, platform } = {}) {
   const spawns = [];
+  const execCalls = [];
   const stdin = createFakeStdin(keys);
   const stdout = createFakeStdout(size);
   const stderr = createFakeStderr();
@@ -45,13 +46,17 @@ async function harness(keys, { dir, extraEnv = {}, size } = {}) {
     stderr,
     processRef,
     execPath: '/usr/local/bin/node',
+    platform,
     spawn: (file, args, options) => {
       spawns.push({ file, args, options });
       return { unref: () => {} };
     },
-    execFile: async () => { throw new Error('execFile must not be called; the config dir is in env'); },
+    execFile: async (...args) => {
+      execCalls.push(args);
+      throw new Error('execFile must not be called; the config dir is in env');
+    },
   });
-  return { code, spawns, stdin, stdout, stderr, processRef };
+  return { code, spawns, execCalls, stdin, stdout, stderr, processRef };
 }
 
 function taskFrom(spawn) {
@@ -595,6 +600,9 @@ test('the popup hops to an ASCII input source and posts a restore watchdog', asy
     stderr: createFakeStderr(),
     processRef,
     execPath: '/usr/local/bin/node',
+    // The guard is macOS-only. Pin the platform so this does not depend on
+    // the machine running the suite — npm test is an install build step.
+    platform: 'darwin',
     spawn: (file, args, options) => {
       spawns.push({ file, args, options });
       return { unref: () => {} };
@@ -620,8 +628,11 @@ test('the popup hops to an ASCII input source and posts a restore watchdog', asy
 
 test('opting out of the ASCII hop keeps the popup from touching osascript', async () => {
   const { dir } = await scratch();
-  const { code, spawns } = await harness(['\u001b'], { dir });
+  // darwin, so a missing opt-out would actually call osascript. On linux the
+  // platform gate would hide a broken opt-out.
+  const { code, spawns, execCalls } = await harness(['\u001b'], { dir, platform: 'darwin' });
   await new Promise((resolve) => { setTimeout(resolve, 20); });
   assert.equal(code, 0);
-  assert.deepEqual(spawns, [], 'no watchdog, and the throwing execFile stub was never reached');
+  assert.deepEqual(spawns, [], 'no watchdog was posted');
+  assert.deepEqual(execCalls, [], 'the opt-out returned before osascript');
 });

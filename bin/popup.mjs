@@ -65,6 +65,7 @@ export async function runPopup({
   spawn = spawnChild,
   execFile = execFileAsync,
   execPath = process.execPath,
+  platform = process.platform,
 } = {}) {
   if (!stdin?.isTTY || !stdout?.isTTY || typeof stdin.setRawMode !== 'function') {
     diagnostic(stderr, 'an interactive terminal is required');
@@ -177,7 +178,7 @@ export async function runPopup({
     // osascript launch, and the popup must not wait on it to appear. The
     // restore is owned by a detached watchdog keyed on this pid, so it fires
     // however the popup ends.
-    void guardAsciiInput({ env, execFile, spawn, execPath, pid: processRef.pid });
+    void guardAsciiInput({ env, platform, execFile, spawn, execPath, pid: processRef.pid });
 
     for await (const chunk of stdin) {
       if (stopCode !== null) break;
